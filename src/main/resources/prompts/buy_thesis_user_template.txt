@@ -1,0 +1,86 @@
+Generate a long-term buy thesis for the following stock.
+
+Ticker: {{ticker}}
+Company: {{companyName}}
+Analyst notes / context (may be empty): {{userNotes}}
+Latest fundamentals from data provider (may be empty): {{fundamentalsJson}}
+
+Return a JSON object with this EXACT schema (all keys required; use null or empty arrays where not applicable):
+
+Hard output constraints:
+- Return minified JSON only: no indentation, no line breaks, no markdown.
+- Keep every string value under 160 characters.
+- Keep arrays to 3-5 items unless the schema says otherwise.
+- Do not include long prose; this endpoint stores structured monitoring data, not a full essay.
+
+{
+  "ticker": "string",
+  "companyName": "string",
+  "verdict": "GREEN | YELLOW | RED",
+  "suitableForLongTermHold": true,
+  "convictionScore": 0,
+  "exclusionGates": {
+    "passed": true,
+    "failedGates": ["G1"],
+    "notes": "string"
+  },
+  "trend": {
+    "megaTrend": "string",
+    "isRealTrend": true,
+    "eightFactorScore": 0,
+    "factorBreakdown": {
+      "revolutionary": true,
+      "disruptive": true,
+      "scalable": true,
+      "raisesProductivity": true,
+      "technicallyMature": true,
+      "sociallyAccepted": true,
+      "hardToSubstitute": true,
+      "viableBusinessModel": true
+    },
+    "stage": "WIND_HEAD | WIND_EYE | WIND_TAIL",
+    "stageRationale": "string"
+  },
+  "fiveCriteria": {
+    "structuralTrend": { "score": 0, "evidence": "string" },
+    "rapidGrowth": { "score": 0, "evidence": "string", "ruleOf40Value": 0 },
+    "moat": {
+      "score": 0,
+      "moatTypes": ["TECHNOLOGY", "NETWORK_EFFECT", "SCALE", "BRAND", "SWITCHING_COST", "PROPRIETARY_DATA", "REGULATORY", "DISTRIBUTION", "TALENT"],
+      "moatDepth": "string"
+    },
+    "cashFlow": { "score": 0, "evidence": "string" },
+    "marketSize": { "score": 0, "evidence": "string" }
+  },
+  "firstPrinciples": {
+    "trueIndustry": "string",
+    "industryWinningRules": "string",
+    "coreAdvantage": "string",
+    "coreAdvantageDirection": "STRENGTHENING | STABLE | WEAKENING",
+    "paradigmShiftRisk": {
+      "threat": "string",
+      "probability": "LOW | MEDIUM | HIGH",
+      "timeline": "string"
+    }
+  },
+  "companyType": "TECH_INNOVATOR | BUSINESS_MODEL_INNOVATOR | BRAND | ECOSYSTEM",
+  "scalability": { "scalable": true, "rationale": "string" },
+  "positionGuidance": {
+    "maxPortfolioPercent": 0,
+    "entryStrategy": "string",
+    "horizonYears": "5-7",
+    "returnTarget": "string"
+  },
+  "thesisSummary": "string",
+  "killCriteria": ["string"],
+  "watchItems": ["string"],
+  "upgradeMilestones": ["string"]
+}
+
+Notes on fields:
+- convictionScore: 0-100 overall conviction. GREEN typically 70+, YELLOW 40-69, RED below 40.
+- exclusionGates.failedGates: empty array if passed is true.
+- thesisSummary: 3-5 plain-language sentences explaining why this company compounds for 5-7 years.
+- killCriteria: 3-7 specific observable conditions that would BREAK this thesis (consumed by the daily review).
+- watchItems: specific metrics/events to monitor quarterly.
+- upgradeMilestones: only for YELLOW verdicts, the milestones that would upgrade to GREEN; empty array otherwise.

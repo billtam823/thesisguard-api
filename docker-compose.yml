@@ -1,0 +1,12 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: thesisguard-postgres
+    environment:
+      POSTGRES_DB: thesisguard
+      POSTGRES_USER: thesisguard_app
+      POSTGRES_PASSWORD: thesisguard_app_dev_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data

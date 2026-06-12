@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: thesisguard-api
+  config:
+    # Local secrets (gitignored). Put openrouter.api-key in application-local.yaml.
+    import: optional:file:./application-local.yaml
+  datasource:
+    url: jdbc:postgresql://localhost:5432/thesisguard
+    username: thesisguard_app
+    password: thesisguard_app_dev_123
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    com.thesisguard.ai: DEBUG
+    com.thesisguard.thesis: DEBUG
+
+openbb:
+  base-url: https://openbb.kingheung.com
+
+openrouter:
+  model: nex-agi/nex-n2-pro:free
+  review-model: openai/gpt-5.4-nano
+  # api-key lives in application-local.yaml (gitignored).
+  # When api-key is set, OpenRouterAiClient is used. Otherwise MockAiClient is used.

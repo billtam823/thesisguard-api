@@ -1,0 +1,61 @@
+Review today's news for the following holding against its saved thesis.
+
+Stock: {{ticker}} -- {{companyName}}
+Current status: {{currentStatus}}
+Review date: {{reviewDate}}
+
+=== SAVED THESIS (JSON) ===
+{{thesisJson}}
+
+=== TODAY'S NEWS ITEMS ===
+{{newsItemsBlock}}
+
+(Each news item is formatted as:
+[id] (source, publishedAt) headline
+summary
+---)
+
+Return a JSON object with this EXACT schema (all keys required; use null or empty arrays where not applicable):
+
+Hard output constraints:
+- Return minified JSON only: no indentation, no line breaks, no markdown.
+- Keep every string value under 160 characters.
+- Keep item analysis to one short sentence.
+- Do not include long prose.
+
+{
+  "ticker": "string",
+  "reviewDate": "YYYY-MM-DD",
+  "changeLevel": "NONE | NOISE | MINOR | MAJOR | CRITICAL",
+  "coreAdvantageDirection": "STRENGTHENING | STABLE | WEAKENING",
+  "buyOpportunity": false,
+  "buyOpportunityRationale": null,
+  "itemAnalyses": [
+    {
+      "newsItemId": "string",
+      "relevance": "COMPANY | INDUSTRY | MACRO | IRRELEVANT",
+      "classification": "NOISE | K1_MOAT | K2_GOVERNANCE | K3_VALUATION | K4_MACRO",
+      "evidenceQuality": "RUMOR | REPORT | CONFIRMED | AUDITED_FACT",
+      "itemChangeLevel": "NONE | NOISE | MINOR | MAJOR | CRITICAL",
+      "matchedKillCriteria": ["string"],
+      "analysis": "string"
+    }
+  ],
+  "newsSummary": "string",
+  "thesisImpactSummary": "string",
+  "recommendedStatus": "HOLD | MONITOR | REVIEW | REDUCE | EXIT",
+  "recommendedActions": ["string"],
+  "newWatchItems": ["string"],
+  "alertRequired": false,
+  "alertMessage": null
+}
+
+Notes on fields:
+- changeLevel: the MAXIMUM itemChangeLevel across all items.
+- matchedKillCriteria: exact strings copied from the thesis killCriteria array that this item matches; empty array if none.
+- analysis: 1-3 sentences per item.
+- newsSummary: 1-2 sentences summarizing what today's news items reported -- facts only, no thesis judgment. Must not repeat thesisImpactSummary.
+- thesisImpactSummary: 2-4 sentences on the net effect of today's news on the 5-7 year thesis.
+- newWatchItems: items to append to the thesis watch list; empty array if none.
+- alertRequired: true only when changeLevel is MAJOR or CRITICAL, or when buyOpportunity is true and the drop is significant.
+- alertMessage: concise and factual, referencing the specific trigger; null when alertRequired is false.
