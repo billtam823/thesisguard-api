@@ -4,6 +4,7 @@ import com.thesisguard.common.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -126,6 +127,15 @@ public class OpenBbClient {
             return response.results();
         } catch (ApiException ex) {
             throw ex;
+        } catch (RestClientResponseException ex) {
+            // OpenBB's SEC provider answers 400 "No Form 4 data was returned for X."
+            // when the date range simply has no transactions — that is an empty
+            // result, not an upstream failure.
+            if (ex.getStatusCode().is4xxClientError()
+                    && ex.getResponseBodyAsString().toLowerCase().contains("no form 4 data")) {
+                return List.of();
+            }
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to fetch insider trading from OpenBB: " + ex.getMessage());
         } catch (Exception ex) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to fetch insider trading from OpenBB: " + ex.getMessage());
         }
