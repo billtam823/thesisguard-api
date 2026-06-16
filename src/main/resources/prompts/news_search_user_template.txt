@@ -1,0 +1,19 @@
+Collect important news for this holding.
+
+Stock symbol: {{ticker}}
+Company name: {{companyName}}
+Time window (UTC, inclusive): {{windowStart}} to {{windowEnd}}
+Thesis summary (for relevance, optional): {{thesisSummary}}
+
+Search the web for news about this company published or updated within the window above. Use the actual window dates given — do not rely on your own sense of the current date. Apply the source priority and exclusion rules from the system instructions.
+
+Return ONLY this minified JSON (no markdown):
+{"no_reliable_news":false,"news":[{"title":"string","url":"https://...","source":"publisher name","published_datetime":"ISO-8601","summary":"1-2 sentence factual summary","confirmed":true,"secondary_sources":["https://..."]}]}
+
+Notes:
+- url: the main source URL, taken from a page you actually found via search.
+- source: the human-readable publisher name (e.g. "Reuters").
+- published_datetime: the item's publication time in ISO-8601; must be within the window.
+- confirmed: false when paywalled or reported by only one low-quality source.
+- secondary_sources: other URLs reporting the same event; [] if none.
+- If nothing reliable is found, return {"no_reliable_news":true,"news":[]}.

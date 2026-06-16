@@ -12,10 +12,15 @@ public record NewsItemResponse(
         String summary,
         String url,
         @JsonProperty("published_date") LocalDate publishedDate,
+        String source,
+        @JsonProperty("reviewed_at") LocalDateTime reviewedAt,
+        @JsonProperty("impact_level") String impactLevel,
+        @JsonProperty("related_to_stock") Boolean relatedToStock,
+        String analysis,
         @JsonProperty("created_at") LocalDateTime createdAt,
         @JsonProperty("updated_at") LocalDateTime updatedAt
 ) {
     public static NewsItemResponse from(NewsItem item) {
-        return new NewsItemResponse(item.getId(), item.getStock().getId(), item.getTitle(), item.getSummary(), item.getUrl(), item.getPublishedDate(), item.getCreatedAt(), item.getUpdatedAt());
+        return new NewsItemResponse(item.getId(), item.getStock().getId(), item.getTitle(), item.getSummary(), item.getUrl(), item.getPublishedDate(), item.getSource(), item.getReviewedAt(), item.getImpactLevel(), item.getRelatedToStock(), item.getAnalysis(), item.getCreatedAt(), item.getUpdatedAt());
     }
 }

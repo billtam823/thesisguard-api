@@ -43,6 +43,10 @@ public class Stock {
     @Column(nullable = false, length = 32)
     private StockStatus status;
 
+    // Set to RUNNING while an async review is running; FAILED on error; null when idle.
+    @Column(length = 16)
+    private String reviewStatus;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

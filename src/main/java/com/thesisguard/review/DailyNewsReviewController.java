@@ -1,5 +1,6 @@
 package com.thesisguard.review;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,8 +15,18 @@ public class DailyNewsReviewController {
     }
 
     @PostMapping("/review-news")
-    public DailyNewsReviewResponse reviewToday(@PathVariable String stockCode) {
-        return reviewService.reviewToday(stockCode);
+    public DailyNewsReviewResponse reviewPending(@PathVariable String stockCode) {
+        return reviewService.reviewPending(stockCode);
+    }
+
+    @PostMapping("/reviews/auto")
+    public ResponseEntity<AutoReviewResponse> autoReview(@PathVariable String stockCode) {
+        return ResponseEntity.accepted().body(reviewService.autoReview(stockCode));
+    }
+
+    @GetMapping("/monitor-memory")
+    public ThesisMonitorMemoryResponse memory(@PathVariable String stockCode) {
+        return reviewService.getMemory(stockCode);
     }
 
     @GetMapping("/daily-reviews")

@@ -1,12 +1,17 @@
 package com.thesisguard.news;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.thesisguard.finnhub.FinnhubNewsItem;
+import com.thesisguard.newsfilter.NewsfilterArticle;
 import com.thesisguard.openbb.OpenBbFilingItem;
 import com.thesisguard.openbb.OpenBbInsiderTransaction;
 import com.thesisguard.openbb.OpenBbNewsItem;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -17,8 +22,16 @@ public record FetchedNewsItemResponse(
         String url,
         @JsonProperty("published_date") LocalDate publishedDate,
         String source,
-        String summary
+        String summary,
+        // Full article text for the review to reason over. Carried internally to NewsItem; not
+        // serialized in the /news/fetch preview (which only needs the short summary).
+        @JsonIgnore String content
 ) {
+
+    /** Backward-compatible constructor for sources that have no separate full-article text. */
+    public FetchedNewsItemResponse(String symbol, String title, String url, LocalDate publishedDate, String source, String summary) {
+        this(symbol, title, url, publishedDate, source, summary, null);
+    }
 
     private static final String SEC_SOURCE = "SEC EDGAR";
 
@@ -55,6 +68,34 @@ public record FetchedNewsItemResponse(
                 item.source(),
                 item.summary()
         );
+    }
+
+    public static FetchedNewsItemResponse fromFinnhub(FinnhubNewsItem item) {
+        LocalDate publishedDate = item.datetime() > 0
+                ? Instant.ofEpochSecond(item.datetime()).atZone(ZoneOffset.UTC).toLocalDate()
+                : null;
+        return new FetchedNewsItemResponse(
+                item.related(),
+                item.headline(),
+                item.url(),
+                publishedDate,
+                item.source(),
+                item.summary()
+        );
+    }
+
+    public static FetchedNewsItemResponse fromNewsfilter(NewsfilterArticle item) {
+        LocalDate publishedDate = null;
+        if (item.publishedAt() != null && !item.publishedAt().isBlank()) {
+            try {
+                publishedDate = java.time.OffsetDateTime.parse(item.publishedAt()).toLocalDate();
+            } catch (Exception ignored) {
+                // leave null; the ingest window filter treats a missing date as "today"
+            }
+        }
+        String source = item.source() != null ? item.source().name() : null;
+        String symbol = item.symbols() != null && !item.symbols().isEmpty() ? item.symbols().get(0) : null;
+        return new FetchedNewsItemResponse(symbol, item.title(), item.sourceUrl(), publishedDate, source, item.description());
     }
 
     public static FetchedNewsItemResponse fromFiling(String symbol, OpenBbFilingItem filing) {

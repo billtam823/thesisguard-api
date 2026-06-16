@@ -48,6 +48,18 @@ public class StockService {
     }
 
     @Transactional(readOnly = true)
+    public List<StockLookupResponse> lookup(String query) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        return openBbClient.searchEquities(query.trim()).stream()
+                .filter(item -> item.symbol() != null && !item.symbol().isBlank())
+                .map(item -> new StockLookupResponse(item.symbol().toUpperCase(Locale.ROOT), item.name()))
+                .limit(20)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public StockResponse get(String stockCode) {
         return StockResponse.from(getEntity(stockCode));
     }

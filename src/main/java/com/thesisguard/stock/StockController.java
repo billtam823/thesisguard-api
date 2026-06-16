@@ -26,6 +26,11 @@ public class StockController {
         return stockService.list();
     }
 
+    @GetMapping("/lookup")
+    public List<StockLookupResponse> lookup(@RequestParam String query) {
+        return stockService.lookup(query);
+    }
+
     @GetMapping("/{stockCode}")
     public StockResponse get(@PathVariable String stockCode) {
         return stockService.get(stockCode);

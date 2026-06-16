@@ -21,10 +21,12 @@ public record StockThesisResponse(
         @JsonProperty("main_risks") String mainRisks,
         @JsonProperty("thesis_break_triggers") String thesisBreakTriggers,
         @JsonProperty("daily_review_focus") String dailyReviewFocus,
+        @JsonProperty("generation_status") String generationStatus,
+        @JsonProperty("generation_error") String generationError,
         @JsonProperty("created_at") LocalDateTime createdAt,
         @JsonProperty("updated_at") LocalDateTime updatedAt
 ) {
     public static StockThesisResponse from(StockThesis thesis) {
-        return new StockThesisResponse(thesis.getId(), thesis.getStock().getId(), thesis.getFullBuyThesis(), thesis.getSavedBuyThesisSummary(), thesis.getFinalRating(), thesis.getConviction(), thesis.getPortfolioRole(), thesis.getCoreThesis(), thesis.getBusinessEssence(), thesis.getGrowthDrivers(), thesis.getMoatSummary(), thesis.getFinancialQuality(), thesis.getValuationView(), thesis.getMainRisks(), thesis.getThesisBreakTriggers(), thesis.getDailyReviewFocus(), thesis.getCreatedAt(), thesis.getUpdatedAt());
+        return new StockThesisResponse(thesis.getId(), thesis.getStock().getId(), thesis.getFullBuyThesis(), thesis.getSavedBuyThesisSummary(), thesis.getFinalRating(), thesis.getConviction(), thesis.getPortfolioRole(), thesis.getCoreThesis(), thesis.getBusinessEssence(), thesis.getGrowthDrivers(), thesis.getMoatSummary(), thesis.getFinancialQuality(), thesis.getValuationView(), thesis.getMainRisks(), thesis.getThesisBreakTriggers(), thesis.getDailyReviewFocus(), thesis.getGenerationStatus(), thesis.getGenerationError(), thesis.getCreatedAt(), thesis.getUpdatedAt());
     }
 }

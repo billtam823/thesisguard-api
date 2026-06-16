@@ -10,6 +10,7 @@ public record NewsItemCreateRequest(
         @NotBlank @Size(max = 500) String title,
         String summary,
         @Size(max = 1000) String url,
-        @JsonProperty("published_date") LocalDate publishedDate
+        @JsonProperty("published_date") LocalDate publishedDate,
+        @Size(max = 64) String source
 ) {
 }

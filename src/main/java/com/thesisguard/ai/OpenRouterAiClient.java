@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.thesisguard.common.exception.ApiException;
 import com.thesisguard.news.NewsItem;
+import com.thesisguard.review.NewsTriageResult;
 import com.thesisguard.review.ReviewAiResponse;
 import com.thesisguard.review.ReviewNewsAnalysisAiResponse;
 import com.thesisguard.review.ThesisChangeLevel;
@@ -29,7 +30,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -51,10 +54,13 @@ public class OpenRouterAiClient implements AiClient {
     private final ObjectMapper objectMapper;
     private final String thesisModel;
     private final String reviewModel;
+    private final String triageModel;
     private final String buyThesisSystemPrompt;
     private final String buyThesisUserTemplate;
     private final String dailyReviewSystemPrompt;
     private final String dailyReviewUserTemplate;
+    private final String newsTriageSystemPrompt;
+    private final String newsTriageUserTemplate;
 
     public OpenRouterAiClient(OpenRouterProperties properties, ObjectMapper objectMapper) {
         this.restClient = RestClient.builder()
@@ -65,21 +71,25 @@ public class OpenRouterAiClient implements AiClient {
         this.objectMapper = objectMapper;
         this.thesisModel = properties.model() != null ? properties.model() : "google/gemini-2.0-flash-exp:free";
         this.reviewModel = properties.reviewModel() != null ? properties.reviewModel() : this.thesisModel;
+        // Triage is the cheap pre-filter; fall back to the review model when no cheap model is configured.
+        this.triageModel = properties.triageModel() != null ? properties.triageModel() : this.reviewModel;
         this.buyThesisSystemPrompt = loadPrompt("prompts/buy_thesis_system_prompt.txt");
         this.buyThesisUserTemplate = loadPrompt("prompts/buy_thesis_user_template.txt");
         this.dailyReviewSystemPrompt = loadPrompt("prompts/daily_review_system_prompt.txt");
         this.dailyReviewUserTemplate = loadPrompt("prompts/daily_review_user_template.txt");
+        this.newsTriageSystemPrompt = loadPrompt("prompts/news_triage_system_prompt.txt");
+        this.newsTriageUserTemplate = loadPrompt("prompts/news_triage_user_template.txt");
     }
 
     @Override
     public ThesisAiResponse generateBuyThesis(Stock stock) {
-        String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock), 0.4, 6000);
         try {
+            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock), 0.4, 6000);
             return mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
-            String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock), 0.2, 2000);
             try {
+                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock), 0.2, 4000);
                 return mapCompactThesisResponse(compactJson, stock);
             } catch (TruncatedJsonException compactEx) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY,
@@ -89,14 +99,79 @@ public class OpenRouterAiClient implements AiClient {
     }
 
     @Override
-    public ReviewAiResponse reviewNews(Stock stock, StockThesis thesis, List<NewsItem> newsItems) {
+    public NewsTriageResult triageNews(Stock stock, StockThesis thesis, List<NewsItem> newsItems) {
+        if (newsItems.isEmpty()) {
+            return new NewsTriageResult(List.of());
+        }
+        List<Long> ids = newsItems.stream().map(NewsItem::getId).toList();
         try {
-            String json = callOpenRouter(reviewModel, dailyReviewSystemPrompt, buildReviewUserPrompt(stock, thesis, newsItems), 0.1, reviewMaxTokens(newsItems.size()));
+            String json = callOpenRouter(triageModel, newsTriageSystemPrompt,
+                    buildTriageUserPrompt(stock, thesis, newsItems), 0.0, triageMaxTokens(newsItems.size()));
+            return mapTriageResponse(json, newsItems);
+        } catch (ApiException ex) {
+            // Fail safe: never silently drop a possible signal. Escalate the whole group to the
+            // full doctrine review when triage is unavailable (truncated/empty/parse/API failure).
+            log.debug("[OpenRouter] Triage failed ({}); treating all {} item(s) as material", ex.getMessage(), newsItems.size());
+            return NewsTriageResult.allMaterial(ids, "Triage unavailable; escalated to full review as a precaution.");
+        }
+    }
+
+    private int triageMaxTokens(int newsCount) {
+        // One short verdict per item (id + boolean + brief reason); keep the budget tight.
+        return Math.min(6000, 400 + 80 * newsCount);
+    }
+
+    private String buildTriageUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems) {
+        return fill(newsTriageUserTemplate,
+                "{{ticker}}", stock.getTicker(),
+                "{{companyName}}", stock.getCompanyName(),
+                "{{thesisDigest}}", buildCompactThesisText(thesis),
+                "{{newsItemsBlock}}", buildNewsItemsBlock(newsItems, TRIAGE_SUMMARY_LEN, false));
+    }
+
+    private NewsTriageResult mapTriageResponse(String json, List<NewsItem> newsItems) {
+        JsonNode root = parseTree(json);
+        Map<Long, NewsTriageResult.Verdict> byId = new HashMap<>();
+        root.path("items").forEach(item -> {
+            Long id = parseId(text(item, "id"));
+            if (id == null) {
+                return;
+            }
+            boolean material = item.path("material").asBoolean(false);
+            boolean related = item.path("related").asBoolean(true); // default related (fail-safe: don't hide news)
+            byId.put(id, new NewsTriageResult.Verdict(id, material, related, truncate(text(item, "reason"), 200)));
+        });
+        // Any item the model omitted defaults to material and related (fail safe).
+        List<NewsTriageResult.Verdict> verdicts = new ArrayList<>();
+        for (NewsItem item : newsItems) {
+            NewsTriageResult.Verdict verdict = byId.get(item.getId());
+            verdicts.add(verdict != null
+                    ? verdict
+                    : new NewsTriageResult.Verdict(item.getId(), true, true, "No triage verdict returned; escalated as a precaution."));
+        }
+        return new NewsTriageResult(verdicts);
+    }
+
+    private Long parseId(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    @Override
+    public ReviewAiResponse reviewNews(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
+        try {
+            String json = callOpenRouter(reviewModel, dailyReviewSystemPrompt, buildReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.1, reviewMaxTokens(newsItems.size()));
             return mapReviewResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Review JSON was truncated; retrying with compact fallback schema");
             try {
-                String compactJson = callOpenRouter(reviewModel, COMPACT_REVIEW_SYSTEM_PROMPT, buildCompactReviewUserPrompt(stock, thesis, newsItems), 0.0, 4000);
+                String compactJson = callOpenRouter(reviewModel, COMPACT_REVIEW_SYSTEM_PROMPT, buildCompactReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.0, 6000);
                 return mapCompactReviewResponse(compactJson);
             } catch (TruncatedJsonException compactEx) {
                 log.debug("[OpenRouter] Compact review fallback was also truncated; using local conservative fallback");
@@ -111,8 +186,9 @@ public class OpenRouterAiClient implements AiClient {
     private int reviewMaxTokens(int newsCount) {
         // Reasoning models spend hidden thinking tokens out of the same completion
         // budget, and itemAnalyses grows with every saved article, so a flat limit
-        // truncates the JSON once either grows.
-        return Math.min(16000, 6000 + 250 * newsCount);
+        // truncates the JSON once either grows. The rewritten monitoring memory
+        // (updatedMemory) also comes out of this budget.
+        return Math.min(20000, 9000 + 250 * newsCount);
     }
 
     private String callOpenRouter(String model, String systemPrompt, String userPrompt, double temperature, int maxTokens) {
@@ -404,7 +480,8 @@ public class OpenRouterAiClient implements AiClient {
                 newsSummary.isBlank() ? thesisImpact : newsSummary,
                 thesisImpact,
                 joinArray(root.path("recommendedActions")),
-                newsAnalysis
+                newsAnalysis,
+                text(root, "updatedMemory")
         );
     }
 
@@ -422,7 +499,8 @@ public class OpenRouterAiClient implements AiClient {
                 text(root, "summary"),
                 text(root, "impact"),
                 text(root, "action"),
-                newsAnalysis
+                newsAnalysis,
+                text(root, "updatedMemory")
         );
     }
 
@@ -435,12 +513,14 @@ public class OpenRouterAiClient implements AiClient {
                     "NOISE"
             ));
         }
+        // Null updatedMemory keeps the stored monitoring memory unchanged.
         return new ReviewAiResponse(
                 ThesisChangeLevel.No_Change,
                 "AI provider failed for " + stock.getTicker() + "; local fallback defaulted to No Change.",
                 reason + " Review manually if today's news looks material.",
                 "Keep current status and rerun review with a stronger model if needed.",
-                analysis
+                analysis,
+                null
         );
     }
 
@@ -482,43 +562,54 @@ public class OpenRouterAiClient implements AiClient {
                 """.formatted(stock.getTicker(), stock.getCompanyName());
     }
 
-    private String buildReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems) {
+    private String buildReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
         return fill(dailyReviewUserTemplate,
                 "{{ticker}}", stock.getTicker(),
                 "{{companyName}}", stock.getCompanyName(),
                 "{{currentStatus}}", stock.getStatus().getLabel(),
                 "{{reviewDate}}", LocalDate.now().toString(),
                 "{{thesisJson}}", buildThesisJson(thesis),
-                "{{newsItemsBlock}}", buildNewsItemsBlock(newsItems));
+                "{{monitorMemoryBlock}}", monitorMemory,
+                "{{newsItemsBlock}}", buildNewsItemsBlock(newsItems, REVIEW_SUMMARY_LEN, true));
     }
 
-    private String buildCompactReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems) {
+    private String buildCompactReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
         return """
                 Review today's news against this saved long-term thesis.
                 Stock: %s -- %s
                 Status: %s
                 Date: %s
                 Thesis: %s
+                Prior monitoring notes: %s
                 News: %s
 
-                Return ONLY minified JSON. No markdown. Every string under 90 characters.
-                Schema: {"changeLevel":"NONE|NOISE|MINOR|MAJOR|CRITICAL","summary":"string","impact":"string","action":"string","items":[{"id":"string","level":"NONE|NOISE|MINOR|MAJOR|CRITICAL","analysis":"string"}]}
+                Return ONLY minified JSON. No markdown. Every string under 90 characters, except updatedMemory which may be up to 1200 characters.
+                updatedMemory: rewrite the prior monitoring notes adding only durable new findings; drop noise and resolved items.
+                Schema: {"changeLevel":"NONE|NOISE|MINOR|MAJOR|CRITICAL","summary":"string","impact":"string","action":"string","updatedMemory":"string","items":[{"id":"string","level":"NONE|NOISE|MINOR|MAJOR|CRITICAL","analysis":"string"}]}
                 """.formatted(
                 stock.getTicker(),
                 stock.getCompanyName(),
                 stock.getStatus().getLabel(),
                 LocalDate.now(),
                 buildCompactThesisText(thesis),
+                monitorMemory == null || monitorMemory.isBlank() ? NO_DATA : truncate(monitorMemory, 800),
                 buildCompactNewsText(newsItems)
         );
     }
 
-    private String buildNewsItemsBlock(List<NewsItem> newsItems) {
+    // Triage only needs the gist (short snippet, keeps the all-items pass cheap); the expensive
+    // doctrine review reads the full article so it reasons over complete content.
+    private static final int TRIAGE_SUMMARY_LEN = 400;
+    private static final int REVIEW_SUMMARY_LEN = 6000;
+
+    private String buildNewsItemsBlock(List<NewsItem> newsItems, int maxLen, boolean fullContent) {
         StringBuilder news = new StringBuilder();
         for (NewsItem item : newsItems) {
             news.append("[%s] (ThesisGuard, %s) %s%n".formatted(item.getId(), item.getPublishedDate(), item.getTitle()));
-            if (item.getSummary() != null) {
-                news.append(truncate(item.getSummary(), 400)).append("\n");
+            // Review reads the full article (content) for complete context; triage uses the short blurb.
+            String text = fullContent && item.getContent() != null ? item.getContent() : item.getSummary();
+            if (text != null) {
+                news.append(truncate(text, maxLen)).append("\n");
             }
             news.append("---\n");
         }

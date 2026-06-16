@@ -11,6 +11,7 @@ public record StockResponse(
         @JsonProperty("provider_ticker") String providerTicker,
         @JsonProperty("company_name") String companyName,
         StockStatus status,
+        @JsonProperty("review_status") String reviewStatus,
         @JsonProperty("created_at") LocalDateTime createdAt,
         @JsonProperty("updated_at") LocalDateTime updatedAt
 ) {
@@ -22,6 +23,7 @@ public record StockResponse(
                 stock.getProviderTicker(),
                 stock.getCompanyName(),
                 stock.getStatus(),
+                stock.getReviewStatus(),
                 stock.getCreatedAt(),
                 stock.getUpdatedAt()
         );

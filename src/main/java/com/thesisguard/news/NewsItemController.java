@@ -28,6 +28,11 @@ public class NewsItemController {
         return newsItemService.list(stockCode);
     }
 
+    @PostMapping("/ingest")
+    public NewsIngestResponse ingest(@PathVariable String stockCode) {
+        return new NewsIngestResponse(newsItemService.ingest(stockCode));
+    }
+
     @GetMapping("/today")
     public List<NewsItemResponse> today(@PathVariable String stockCode) {
         return newsItemService.today(stockCode);

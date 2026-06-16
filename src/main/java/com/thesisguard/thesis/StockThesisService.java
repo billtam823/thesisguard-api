@@ -1,13 +1,17 @@
 package com.thesisguard.thesis;
 
 import com.thesisguard.ai.AiClient;
+import com.thesisguard.common.exception.ApiException;
 import com.thesisguard.common.exception.ResourceNotFoundException;
 import com.thesisguard.stock.Stock;
 import com.thesisguard.stock.StockService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class StockThesisService {
@@ -16,26 +20,41 @@ public class StockThesisService {
     private final StockService stockService;
     private final StockThesisRepository thesisRepository;
     private final AiClient aiClient;
+    private final ThesisGenerationWorker generationWorker;
 
-    public StockThesisService(StockService stockService, StockThesisRepository thesisRepository, AiClient aiClient) {
+    public StockThesisService(StockService stockService, StockThesisRepository thesisRepository,
+                               AiClient aiClient, ThesisGenerationWorker generationWorker) {
         this.stockService = stockService;
         this.thesisRepository = thesisRepository;
         this.aiClient = aiClient;
+        this.generationWorker = generationWorker;
     }
 
     @Transactional
     public StockThesisResponse generate(String stockCode) {
-        log.debug("[Thesis] Generate requested for stockCode={}", stockCode);
         Stock stock = stockService.getEntity(stockCode);
-        log.debug("[Thesis] Resolved stock: id={}, ticker={}, providerTicker={}", stock.getId(), stock.getTicker(), stock.getProviderTicker());
-        log.debug("[Thesis] Calling AI client to generate buy thesis...");
-        ThesisAiResponse ai = aiClient.generateBuyThesis(stock);
-        log.debug("[Thesis] AI response received: rating={}, conviction={}", ai.finalRating(), ai.conviction());
-        StockThesis thesis = thesisRepository.findByStock(stock).orElseGet(() -> StockThesis.builder().stock(stock).build());
-        apply(thesis, ai);
-        StockThesisResponse saved = StockThesisResponse.from(thesisRepository.save(thesis));
-        log.debug("[Thesis] Thesis saved with id={}", saved.id());
-        return saved;
+        if (!generationWorker.startIfIdle(stock.getId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Thesis generation is already running for " + stock.getTicker());
+        }
+        log.debug("[Thesis] Generation started for stockCode={}", stockCode);
+        StockThesis thesis = thesisRepository.findByStock(stock)
+                .orElseGet(() -> StockThesis.builder().stock(stock)
+                        .fullBuyThesis("").savedBuyThesisSummary("").finalRating("").conviction("")
+                        .portfolioRole("").coreThesis("").businessEssence("").growthDrivers("")
+                        .moatSummary("").financialQuality("").valuationView("").mainRisks("")
+                        .thesisBreakTriggers("").dailyReviewFocus("").build());
+        thesis.setGenerationStatus("RUNNING");
+        thesis.setGenerationError(null);
+        StockThesisResponse response = StockThesisResponse.from(thesisRepository.save(thesis));
+        Long stockId = stock.getId();
+        // Fire the async job only after this transaction commits so the worker can read the saved thesis.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                generationWorker.runAsync(stockId);
+            }
+        });
+        return response;
     }
 
     @Transactional(readOnly = true)

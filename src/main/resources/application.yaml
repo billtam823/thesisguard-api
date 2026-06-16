@@ -24,8 +24,59 @@ logging:
 openbb:
   base-url: https://openbb.kingheung.com
 
+seekingalpha:
+  # Company-news source via RapidAPI (host seeking-alpha-finance.p.rapidapi.com).
+  # Put the RapidAPI key in application-local.yaml:
+  #   seekingalpha:
+  #     api-key: <your rapidapi key>
+  # Without a key, company-news fetches return empty (SEC filings/insider still work via OpenBB).
+  host: seeking-alpha-finance.p.rapidapi.com
+
+newsfilter:
+  base-url: https://api.newsfilter.io
+  # Company-news source (newswires + SEC + financial media; ticker-tagged). Put the key in
+  # application-local.yaml:
+  #   newsfilter:
+  #     api-key: <your newsfilter.io key>
+  # Without a key, company-news fetches return empty (SEC filings/insider still work via OpenBB,
+  # and the AI web-search collector still runs).
+
+finnhub:
+  base-url: https://finnhub.io/api/v1
+  # Former company-news source, now unwired (replaced by newsfilter.io). FinnhubClient remains in
+  # the codebase as a fallback; put a key here + re-wire NewsItemService to use it again.
+
 openrouter:
   model: nex-agi/nex-n2-pro:free
   review-model: openai/gpt-5.4-nano
+  # Cheap model for the news triage pre-filter (material vs noise). Defaults to review-model when unset.
+  triage-model: openai/gpt-5.4-nano
+  # Model used for the AI web-search news collector. Needs a model that supports the
+  # openrouter:web_search server tool. Defaults to review-model when unset.
+  news-search-model: openai/gpt-5.4-nano
   # api-key lives in application-local.yaml (gitignored).
   # When api-key is set, OpenRouterAiClient is used. Otherwise MockAiClient is used.
+
+thesisguard:
+  # Cheap triage gate: when true, news is classified material/noise before the expensive
+  # doctrine review, which only runs on material items. Set false to review every item.
+  triage:
+    enabled: true
+  # AI web-search news collector (OpenRouter web_search tool). Disabled by default now that
+  # Seeking Alpha is the company-news source; set enabled=true to also run it (incurs Exa cost).
+  ai-news-search:
+    enabled: false
+    lookback-hours: 24
+    max-items: 25
+    verify-urls: true
+    # Search backend for the web_search tool. "exa" returns url_citation annotations (enables the
+    # anti-hallucination guard); "auto" uses provider-native search but may omit citations.
+    engine: exa
+  # Automatic news fetch (INGEST ONLY -- never runs a review; review stays manual).
+  # NOTE: confirm the timezone and the two clock times for your market before relying on these.
+  # Empty crons disables auto-fetch (ingest on demand via POST /api/stocks/{code}/news/ingest).
+  news-fetch:
+    zone: America/New_York
+    crons:
+      - "0 0 9 * * MON-FRI"    # pre-market fetch (09:00 ET, before the 09:30 open)
+      - "0 0 12 * * MON-FRI"   # lunch fetch (12:00 ET)

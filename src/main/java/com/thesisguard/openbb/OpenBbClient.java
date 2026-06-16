@@ -22,6 +22,9 @@ public class OpenBbClient {
             "PCX", "NYSE ARCA"
     );
 
+    // OpenBB's yfinance news provider defaults to 10 results when no limit is sent.
+    private static final int NEWS_FETCH_LIMIT = 100;
+
     private final RestClient restClient;
 
     public OpenBbClient(OpenBbProperties properties) {
@@ -51,13 +54,38 @@ public class OpenBbClient {
         }
     }
 
+    // US-listed equity search via the SEC provider (no API key needed); returns symbol + name.
+    public List<OpenBbEquitySearchItem> searchEquities(String query) {
+        try {
+            OpenBbEquitySearchResponse response = restClient.get()
+                    .uri(b -> b.path("/api/v1/equity/search")
+                            .queryParam("query", query)
+                            .queryParam("provider", "sec")
+                            .build())
+                    .retrieve()
+                    .body(OpenBbEquitySearchResponse.class);
+
+            if (response == null || response.results() == null) {
+                return List.of();
+            }
+            return response.results();
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to search equities from OpenBB: " + ex.getMessage());
+        }
+    }
+
+    // Company news via the yfinance provider. Kept for reference/fallback only — yfinance caps at
+    // ~10 recent items and ignores limit/date, so the app sources company news from Finnhub instead.
     public List<OpenBbNewsItem> fetchCompanyNews(String symbol, LocalDate date) {
         try {
             OpenBbNewsResponse response = restClient.get()
                     .uri(b -> {
                         var builder = b.path("/api/v1/news/company")
                                 .queryParam("symbol", symbol)
-                                .queryParam("provider", "yfinance");
+                                .queryParam("provider", "yfinance")
+                                .queryParam("limit", NEWS_FETCH_LIMIT);
                         if (date != null) {
                             builder = builder
                                     .queryParam("start_date", date.toString())

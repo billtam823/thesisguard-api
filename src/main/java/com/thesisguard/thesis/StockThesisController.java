@@ -1,6 +1,7 @@
 package com.thesisguard.thesis;
 
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -13,8 +14,8 @@ public class StockThesisController {
     }
 
     @PostMapping("/generate-thesis")
-    public StockThesisResponse generate(@PathVariable String stockCode) {
-        return thesisService.generate(stockCode);
+    public ResponseEntity<StockThesisResponse> generate(@PathVariable String stockCode) {
+        return ResponseEntity.accepted().body(thesisService.generate(stockCode));
     }
 
     @GetMapping("/thesis")

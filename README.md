@@ -13,7 +13,7 @@ Implemented:
 
 - Watchlist stock CRUD with exchange auto-detection via OpenBB
 - AI-generated buy thesis (OpenRouter) with manual editing
-- Live news previews from OpenBB (yfinance provider)
+- Company news from Finnhub (`/company-news`); OpenBB's yfinance news client is kept but unused
 - Live SEC EDGAR previews from OpenBB (sec provider): per-ticker 8-K filings and Form 4 insider trades
 - Daily news item save/retrieval
 - Daily AI news review against the saved thesis
@@ -23,10 +23,13 @@ Implemented:
 - React frontend (watchlist, stock dossier page, alerts)
 - PostgreSQL persistence, DTO-based REST API, validation, global error handling
 
+- Scheduled automatic news fetch (ingest-only) twice a day; reviews stay user-triggered
+- Cheap AI triage that filters breaking news from noise before the expensive review
+
 Not implemented yet:
 
 - Authentication or multi-user support
-- Scheduled/automated daily reviews (reviews are user-triggered)
+- Automated (scheduled) reviews — fetching is automated, but reviews are user-triggered
 - Financial scoring, backtesting, deployment automation
 - Database migrations (schema is Hibernate `ddl-auto: update`)
 
@@ -70,17 +73,21 @@ All stock-scoped endpoints take `{stockCode}`, which resolves as either a numeri
 
 `AiClient` has two implementations selected at startup:
 
-- **`OpenRouterAiClient`** — active when `openrouter.api-key` is set. Calls the OpenRouter chat completions API with two configurable models: `openrouter.model` for buy thesis generation and `openrouter.review-model` for daily news reviews. Prompts live in `src/main/resources/prompts/` (system prompts + user templates for both flows). Markdown code fences are stripped from responses before JSON parsing.
-- **`MockAiClient`** — fallback via `@ConditionalOnMissingBean` when no key is set. For reviews it maps news-title keywords to change levels: `watch` → Watch Change, `material` → Material Change, `broken` → Thesis Broken, `minor` → Minor Change, otherwise No Change.
+- **`OpenRouterAiClient`** — active when `openrouter.api-key` is set. Calls the OpenRouter chat completions API with three configurable models: `openrouter.model` for buy thesis generation, `openrouter.review-model` for the daily doctrine review, and `openrouter.triage-model` (a cheap model; defaults to the review model) for the news triage pre-filter. Prompts live in `src/main/resources/prompts/` (system prompts + user templates for all flows). Markdown code fences are stripped from responses before JSON parsing.
+- **`MockAiClient`** — fallback via `@ConditionalOnMissingBean` when no key is set. For reviews it maps news-title keywords to change levels: `watch` → Watch Change, `material` → Material Change, `broken` → Thesis Broken, `minor` → Minor Change, otherwise No Change. Its triage marks titles containing those keywords (plus `fraud`/`recall`/`lawsuit`/`guidance cut`) as material, the rest as noise.
 
-## OpenBB Integration
+The triage step is a cheap first pass: it classifies each pending news item as **material** (could affect the long-term thesis) or **noise**, so the expensive doctrine review only runs on — and only reads — the material items. Triage fails safe: if it cannot run, every item is treated as material. Disable it with `thesisguard.triage.enabled: false` to review every item.
 
-`OpenBbClient` wraps four endpoints of the OpenBB Platform REST API:
+## News & OpenBB Integration
+
+**Company news comes from Finnhub.** `FinnhubClient` calls `/company-news` (`https://finnhub.io/api/v1`) for headlines, mapped into `FetchedNewsItemResponse`. It needs `finnhub.api-key`; without a key, news fetches return empty (SEC filings/insider still work). `OpenBbClient.fetchCompanyNews` (yfinance) is kept for reference/fallback but is no longer called.
+
+`OpenBbClient` wraps these OpenBB Platform REST endpoints:
 
 | Method | OpenBB endpoint | Provider | Used for |
 | --- | --- | --- | --- |
 | `fetchExchange` | `/api/v1/equity/profile` | yfinance | Exchange auto-detection on stock creation |
-| `fetchCompanyNews` | `/api/v1/news/company` | yfinance | News preview by date |
+| `fetchCompanyNews` | `/api/v1/news/company` | yfinance | *(kept, unused — news now via Finnhub)* |
 | `fetchCompanyFilings` | `/api/v1/equity/fundamental/filings` | sec | 8-K filings preview (form_type=8-K) |
 | `fetchInsiderTrading` | `/api/v1/equity/ownership/insider_trading` | sec | Form 4 insider trades preview |
 
@@ -93,12 +100,15 @@ Previews are read-only; nothing is stored until the user saves an item as a news
 
 ## Daily Review Workflow
 
-`POST /api/stocks/{stockCode}/review-news`:
+News accumulates in the backlog (unreviewed items) as it is ingested. A review processes the
+whole accumulated group at once. `POST /api/stocks/{stockCode}/review-news`:
 
 1. Load the stock and its saved thesis (404 if no thesis).
-2. Load today's saved news items for the stock.
-3. No news → save a review with `No News Found`, skip the AI call.
-4. News exists → send stock + thesis + news to `AiClient.reviewNews`, save the `DailyNewsReview` plus per-item `NewsAnalysisItem` rows.
+2. Load the pending (unreviewed) news items for the stock.
+3. No pending news → save a review with `No News Found`, skip the AI call.
+4. **Triage** the group (cheap model) into *material* vs *noise*:
+   - **All noise** → save a `No Change` review noting nothing affects the long-term thesis; no expensive call, no memory update, no alert. Every item is marked reviewed.
+   - **Some material** → send stock + thesis + the *material* items to `AiClient.reviewNews`, save the `DailyNewsReview` with per-item `NewsAnalysisItem` rows (noise items recorded as `NOISE` at no extra cost), update the monitoring memory.
 5. Escalate `Stock.status` and raise alerts:
 
 | Thesis Change Level | Stock Status Action | Alert |
@@ -141,8 +151,9 @@ All relationships are lazy; cascades (`ALL` + orphan removal) flow parent → ch
 ### News (saved items)
 
 - `POST /api/stocks/{stockCode}/news` — save a news item (`title` required; `published_date` defaults to today)
+- `POST /api/stocks/{stockCode}/news/ingest` — ingest-only: fetch latest headlines/filings/insider trades and store new ones (no review); returns `new_items_count`. Also run automatically by the scheduler.
 - `GET /api/stocks/{stockCode}/news` — all saved news, newest first
-- `GET /api/stocks/{stockCode}/news/today` — saved news dated today (what the next review will scan)
+- `GET /api/stocks/{stockCode}/news/today` — saved news dated today
 
 ### News (live previews — no DB write)
 
@@ -173,9 +184,9 @@ Talks to the API via `VITE_API_BASE_URL` (`.env`, default `http://localhost:8080
 - **Watchlist** — all stocks with status chips; add/remove
 - **Stock detail (`/stocks/{code}`)** — the "Equity Dossier":
   1. *Buy Thesis* — generate/regenerate, core thesis, pillars, risk panel, full document
-  2. *News Desk* — date-picked fetch that pulls headlines + 8-K filings + insider trades concurrently and merges them into one save-able preview list (partial source failures show a warning); saved items listed below
-  3. *SEC Activity* — auto-loaded on page open: the 10 most recent 8-K filings and Form 4 insider trades from EDGAR, each save-able; non-US stocks show an explanatory note instead
-  4. *Daily Review* — trigger the review, see change level, recommended action, and article-by-article analysis
+  2. *Daily Review* — the thesis-level verdict: change-level chip, recommended action, summary, thesis impact, and the AI monitoring journal (per-article classification lives in the feed below)
+  3. *News* — "Fetch Latest" ingests headlines (and filings) straight into the review backlog (no manual save), with **All / Material / Noise / Pending** filter tabs and each item's review classification shown inline
+  4. *Filings* — the SEC 8-K / Form 4 insider slice of the backlog (`source = "SEC EDGAR"`), with the same filter tabs and inline classification
   5. *Alerts* — per-stock alert list with resolve buttons
 - **Alerts** — global alert feed
 
@@ -196,16 +207,34 @@ spring:
 openbb:
   base-url: https://openbb.kingheung.com
 
+finnhub:
+  base-url: https://finnhub.io/api/v1
+  # api-key lives in application-local.yaml; without it, company-news fetches return empty.
+
 openrouter:
   model: <model for thesis generation>
-  review-model: <model for daily reviews>
+  review-model: <model for the daily doctrine review>
+  triage-model: <cheap model for the news triage pre-filter; defaults to review-model>
+
+thesisguard:
+  triage:
+    enabled: true          # false = review every item, skipping the triage pre-filter
+  news-fetch:                # automatic ingest-only fetch; empty crons disables it
+    zone: America/New_York   # US market timezone (ET)
+    crons:
+      - "0 0 9 * * MON-FRI"    # pre-market fetch (09:00 ET)
+      - "0 0 12 * * MON-FRI"   # lunch fetch (12:00 ET)
 ```
 
-The OpenRouter API key is **not** committed. Put it in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the file to fall back to `MockAiClient`:
+The scheduled fetch only **ingests** news into the backlog; reviews remain user-triggered (run `POST .../review-news` when you want the day's grouped judgment).
+
+API keys are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the OpenRouter key to fall back to `MockAiClient`, and omit the Finnhub key to have company-news fetches return empty:
 
 ```yaml
 openrouter:
-  api-key: <your key>
+  api-key: <your openrouter key>
+finnhub:
+  api-key: <your finnhub key>
 ```
 
 Tests swap the datasource to H2 (`MODE=PostgreSQL`, `ddl-auto: create-drop`) via `src/test/resources/application.yaml` — no Docker needed.

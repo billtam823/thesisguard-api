@@ -67,6 +67,13 @@ public class StockThesis {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String dailyReviewFocus;
 
+    // Set to RUNNING while AI is generating asynchronously; DONE on success; FAILED on error.
+    @Column(length = 16)
+    private String generationStatus;
+
+    @Column(columnDefinition = "TEXT")
+    private String generationError;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

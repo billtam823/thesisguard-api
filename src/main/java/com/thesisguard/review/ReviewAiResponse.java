@@ -9,6 +9,7 @@ public record ReviewAiResponse(
         String summary,
         @JsonProperty("thesis_impact") String thesisImpact,
         @JsonProperty("recommended_action") String recommendedAction,
-        @JsonProperty("news_analysis") List<ReviewNewsAnalysisAiResponse> newsAnalysis
+        @JsonProperty("news_analysis") List<ReviewNewsAnalysisAiResponse> newsAnalysis,
+        @JsonProperty("updated_memory") String updatedMemory
 ) {
 }

@@ -1,0 +1,17 @@
+Triage today's news for {{ticker}} -- {{companyName}} against this long-term thesis.
+
+=== THESIS DIGEST (rating; summary; kill criteria; watch items) ===
+{{thesisDigest}}
+
+=== NEWS ITEMS ===
+{{newsItemsBlock}}
+
+(Each item is formatted as:
+[id] (source, publishedDate) headline
+summary
+---)
+
+For EACH item, decide: (a) related — is it actually about {{ticker}}/{{companyName}} (false for market-wide, macro, or other-company items)? (b) material — could it plausibly affect the 5-7 year thesis? Pay special attention to items matching the kill criteria or watch items above. When unsure about material, choose material=true; an item with related=false must have material=false.
+
+Return ONLY this minified JSON, no markdown, using the exact numeric [id] from each item:
+{"items":[{"id":"<id>","related":true,"material":true,"reason":"<=20 words"}]}
