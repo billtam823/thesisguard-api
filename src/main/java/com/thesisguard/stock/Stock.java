@@ -27,6 +27,12 @@ public class Stock {
     @Column(nullable = true, length = 20)
     private String exchange;
 
+    @Column(nullable = true, length = 100)
+    private String sector;
+
+    @Column(nullable = true, length = 255)
+    private String industry;
+
     @Column(nullable = false, length = 255)
     private String companyName;
 

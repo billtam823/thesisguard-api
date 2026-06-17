@@ -33,7 +33,7 @@ public class OpenBbClient {
                 .build();
     }
 
-    public String fetchExchange(String symbol) {
+    public OpenBbEquityProfile fetchProfile(String symbol) {
         try {
             OpenBbEquityProfileResponse response = restClient.get()
                     .uri(b -> b.path("/api/v1/equity/profile")
@@ -46,9 +46,10 @@ public class OpenBbClient {
             if (response == null || response.results() == null || response.results().isEmpty()) {
                 return null;
             }
-            String raw = response.results().get(0).stockExchange();
-            if (raw == null || raw.isBlank()) return null;
-            return EXCHANGE_CODE_MAP.getOrDefault(raw.toUpperCase(), raw.toUpperCase());
+            OpenBbEquityProfile raw = response.results().get(0);
+            String exchange = raw.stockExchange() == null || raw.stockExchange().isBlank() ? null
+                    : EXCHANGE_CODE_MAP.getOrDefault(raw.stockExchange().toUpperCase(), raw.stockExchange().toUpperCase());
+            return new OpenBbEquityProfile(raw.symbol(), exchange, raw.sector(), raw.industryCategory());
         } catch (Exception ex) {
             return null;
         }

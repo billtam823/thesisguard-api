@@ -41,4 +41,9 @@ public class StockController {
     public void delete(@PathVariable String stockCode) {
         stockService.delete(stockCode);
     }
+
+    @PostMapping("/{stockCode}/refresh-profile")
+    public StockResponse refreshProfile(@PathVariable String stockCode) {
+        return stockService.refreshProfile(stockCode);
+    }
 }

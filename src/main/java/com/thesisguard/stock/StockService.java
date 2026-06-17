@@ -3,6 +3,7 @@ package com.thesisguard.stock;
 import com.thesisguard.common.exception.BadRequestException;
 import com.thesisguard.common.exception.ResourceNotFoundException;
 import com.thesisguard.openbb.OpenBbClient;
+import com.thesisguard.openbb.OpenBbEquityProfile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,21 +26,24 @@ public class StockService {
         if (stockRepository.existsByTicker(ticker)) {
             throw new BadRequestException("Stock already exists in watchlist: " + ticker);
         }
-        String exchange = resolveExchange(request.exchange(), ticker);
+        OpenBbEquityProfile profile = openBbClient.fetchProfile(ticker);
+        String exchange = resolveExchange(request.exchange(), profile);
         Stock stock = Stock.builder()
                 .ticker(ticker)
                 .exchange(exchange)
+                .sector(profile != null ? profile.sector() : null)
+                .industry(profile != null ? profile.industryCategory() : null)
                 .companyName(request.companyName().trim())
                 .status(StockStatus.Hold)
                 .build();
         return StockResponse.from(stockRepository.save(stock));
     }
 
-    private String resolveExchange(String requested, String ticker) {
+    private String resolveExchange(String requested, OpenBbEquityProfile profile) {
         if (requested != null && !requested.isBlank()) {
             return requested.trim().toUpperCase(Locale.ROOT);
         }
-        return openBbClient.fetchExchange(ticker);
+        return profile != null ? profile.stockExchange() : null;
     }
 
     @Transactional(readOnly = true)
@@ -67,6 +71,20 @@ public class StockService {
     @Transactional
     public void delete(String stockCode) {
         stockRepository.delete(getEntity(stockCode));
+    }
+
+    @Transactional
+    public StockResponse refreshProfile(String stockCode) {
+        Stock stock = getEntity(stockCode);
+        OpenBbEquityProfile profile = openBbClient.fetchProfile(stock.getProviderTicker());
+        if (profile != null) {
+            if (stock.getExchange() == null && profile.stockExchange() != null) {
+                stock.setExchange(profile.stockExchange());
+            }
+            stock.setSector(profile.sector());
+            stock.setIndustry(profile.industryCategory());
+        }
+        return StockResponse.from(stockRepository.save(stock));
     }
 
     @Transactional(readOnly = true)
