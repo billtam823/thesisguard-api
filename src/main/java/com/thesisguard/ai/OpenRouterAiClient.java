@@ -87,13 +87,16 @@ public class OpenRouterAiClient implements AiClient {
 
     @Override
     public ThesisAiResponse generateBuyThesis(Stock stock) {
+        // Fetch real fundamentals once and feed both the full and compact prompts so the growth
+        // forecast survives the (frequent) truncation fallback on weaker models.
+        String fundamentalsJson = buildFundamentalsJson(stock);
         try {
-            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock), 0.4, 6000);
+            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 6000);
             return mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
             try {
-                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock), 0.2, 4000);
+                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 4000);
                 return mapCompactThesisResponse(compactJson, stock);
             } catch (TruncatedJsonException compactEx) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY,
@@ -483,8 +486,8 @@ public class OpenRouterAiClient implements AiClient {
                 risks,
                 killCriteria,
                 watchItems.isBlank() ? "Monitor quarterly fundamentals, moat signals, valuation, and thesis-breaking events for " + stock.getTicker() + "." : watchItems,
-                null,
-                null
+                text(root.path("growthForecast"), "returnMultiple"),
+                buildReturnBasis(root.path("growthForecast"))
         );
     }
 
@@ -566,12 +569,12 @@ public class OpenRouterAiClient implements AiClient {
                 || message.contains("Unexpected EOF"));
     }
 
-    private String buildThesisUserPrompt(Stock stock) {
+    private String buildThesisUserPrompt(Stock stock, String fundamentalsJson) {
         return fill(buyThesisUserTemplate,
                 "{{ticker}}", stock.getTicker(),
                 "{{companyName}}", stock.getCompanyName(),
                 "{{userNotes}}", NO_DATA,
-                "{{fundamentalsJson}}", buildFundamentalsJson(stock));
+                "{{fundamentalsJson}}", fundamentalsJson);
     }
 
     // Best-effort real fundamentals for the growth forecast. Returns NO_DATA when OpenBB is
@@ -588,7 +591,9 @@ public class OpenRouterAiClient implements AiClient {
             return NO_DATA;
         }
         ObjectNode node = objectMapper.createObjectNode();
-        if (f.priceToSales() != null) node.put("currentPriceToSales", round(f.priceToSales(), 2));
+        // P/S is the forecast's key input; yfinance often omits it, so derive marketCap/revenue.
+        Double ps = f.effectivePriceToSales();
+        if (ps != null) node.put("currentPriceToSales", round(ps, 2));
         if (f.peRatio() != null) node.put("peRatio", round(f.peRatio(), 2));
         if (f.marketCap() != null) node.put("marketCapUsd", f.marketCap());
         if (f.latestRevenue() != null) node.put("latestRevenueUsd", f.latestRevenue());
@@ -607,16 +612,19 @@ public class OpenRouterAiClient implements AiClient {
         return Math.round(value * factor) / factor;
     }
 
-    private String buildCompactThesisUserPrompt(Stock stock) {
+    private String buildCompactThesisUserPrompt(Stock stock, String fundamentalsJson) {
         return """
                 Generate a compact long-term buy thesis for this stock using the system doctrine.
                 Ticker: %s
                 Company: %s
+                Fundamentals (may be "(none)"): %s
 
                 Return ONLY minified JSON. No markdown. Every string under 90 characters.
+                For growthForecast follow Stage 6: returnMultiple = growthFactor(CAGR) x (terminalP/S / currentP/S).
+                If fundamentals provide currentPriceToSales you MUST use it and set confidence HIGH; else estimate and set MEDIUM/LOW.
                 Required schema:
-                {"verdict":"GREEN|YELLOW|RED","convictionScore":0,"companyType":"TECH_INNOVATOR|BUSINESS_MODEL_INNOVATOR|BRAND|ECOSYSTEM","trend":"string","coreAdvantage":"string","coreAdvantageDirection":"STRENGTHENING|STABLE|WEAKENING","moat":"string","financialQuality":"string","valuationView":"string","thesisSummary":"string","killCriteria":["string","string","string"],"watchItems":["string","string","string"],"risks":["string","string","string"]}
-                """.formatted(stock.getTicker(), stock.getCompanyName());
+                {"verdict":"GREEN|YELLOW|RED","convictionScore":0,"companyType":"TECH_INNOVATOR|BUSINESS_MODEL_INNOVATOR|BRAND|ECOSYSTEM","trend":"string","coreAdvantage":"string","coreAdvantageDirection":"STRENGTHENING|STABLE|WEAKENING","moat":"string","financialQuality":"string","valuationView":"string","thesisSummary":"string","killCriteria":["string","string","string"],"watchItems":["string","string","string"],"risks":["string","string","string"],"growthForecast":{"returnMultiple":"2x|3-5x|5-10x|10x+","revenueCagr":"string","currentPriceToSales":0,"terminalMultipleAssumption":"string","basis":"string","bearCase":"2x|3-5x|5-10x|10x+","bullCase":"2x|3-5x|5-10x|10x+","confidence":"LOW|MEDIUM|HIGH"}}
+                """.formatted(stock.getTicker(), stock.getCompanyName(), fundamentalsJson);
     }
 
     private String buildReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
