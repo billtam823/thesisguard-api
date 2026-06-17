@@ -51,6 +51,8 @@ public class OpenRouterAiClient implements AiClient {
             Return only the requested minified JSON.
             """;
     private static final Pattern CODE_BLOCK = Pattern.compile("(?s)```[a-zA-Z]*\\n?(\\{.*?\\})\\n?```");
+    // Ordered weakest -> strongest; index used to clamp the forecast to a size-based ceiling.
+    private static final List<String> RETURN_BUCKETS = List.of("2x", "3-5x", "5-10x", "10x+");
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -89,20 +91,25 @@ public class OpenRouterAiClient implements AiClient {
     public ThesisAiResponse generateBuyThesis(Stock stock) {
         // Fetch real fundamentals once and feed both the full and compact prompts so the growth
         // forecast survives the (frequent) truncation fallback on weaker models.
-        String fundamentalsJson = buildFundamentalsJson(stock);
+        FundamentalsSnapshot fundamentals = fetchFundamentalsSafe(stock);
+        String fundamentalsJson = buildFundamentalsJson(stock, fundamentals);
+        ThesisAiResponse response;
         try {
             String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 6000);
-            return mapThesisResponse(json);
+            response = mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
             try {
-                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 4000);
-                return mapCompactThesisResponse(compactJson, stock);
+                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 8000);
+                response = mapCompactThesisResponse(compactJson, stock);
             } catch (TruncatedJsonException compactEx) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY,
                         "OpenRouter model output was truncated even with the compact fallback schema. Switch to a model with a larger completion limit.");
             }
         }
+        // Weak models routinely ignore the prompt's size cap, so enforce the law-of-large-numbers
+        // ceiling deterministically against the real market cap. The model proposes; code clamps.
+        return clampForecastToSize(response, fundamentals);
     }
 
     @Override
@@ -577,16 +584,18 @@ public class OpenRouterAiClient implements AiClient {
                 "{{fundamentalsJson}}", fundamentalsJson);
     }
 
-    // Best-effort real fundamentals for the growth forecast. Returns NO_DATA when OpenBB is
-    // unavailable/rate-limited so the prompt falls back to a low-confidence estimate.
-    private String buildFundamentalsJson(Stock stock) {
-        FundamentalsSnapshot f;
+    private FundamentalsSnapshot fetchFundamentalsSafe(Stock stock) {
         try {
-            f = openBbClient.fetchFundamentals(stock.getProviderTicker());
+            return openBbClient.fetchFundamentals(stock.getProviderTicker());
         } catch (Exception ex) {
             log.debug("[OpenRouter] Fundamentals fetch failed for {}: {}", stock.getTicker(), ex.getMessage());
-            f = null;
+            return null;
         }
+    }
+
+    // Best-effort real fundamentals for the growth forecast. Returns NO_DATA when OpenBB is
+    // unavailable/rate-limited so the prompt falls back to a low-confidence estimate.
+    private String buildFundamentalsJson(Stock stock, FundamentalsSnapshot f) {
         if (f == null) {
             return NO_DATA;
         }
@@ -610,6 +619,42 @@ public class OpenRouterAiClient implements AiClient {
     private double round(double value, int decimals) {
         double factor = Math.pow(10, decimals);
         return Math.round(value * factor) / factor;
+    }
+
+    // Enforce the law-of-large-numbers ceiling on the forecast bucket: no company has 5x'd from a
+    // >$1T base in 7 years. Clamps deterministically when the model overshoots a mega-cap's size.
+    private ThesisAiResponse clampForecastToSize(ThesisAiResponse r, FundamentalsSnapshot f) {
+        log.debug("[OpenRouter] clampForecastToSize: bucket={}, marketCap={}",
+                r == null ? null : r.returnMultiple(), f == null ? null : f.marketCap());
+        if (r == null || f == null || f.marketCap() == null
+                || r.returnMultiple() == null || r.returnMultiple().isBlank()) {
+            return r;
+        }
+        int proposed = RETURN_BUCKETS.indexOf(r.returnMultiple().trim());
+        if (proposed < 0) {
+            return r; // unrecognized label; leave the model's value alone
+        }
+        int ceiling = sizeCeilingIndex(f.marketCap());
+        if (proposed <= ceiling) {
+            return r; // already within reality for this size
+        }
+        String capped = RETURN_BUCKETS.get(ceiling);
+        String note = "Size-capped to " + capped + " (market cap $" + round(f.marketCap() / 1e12, 2)
+                + "T; companies this large rarely exceed it over 7 years).";
+        String basis = r.returnBasis() == null || r.returnBasis().isBlank() ? note : r.returnBasis() + "\n" + note;
+        log.debug("[OpenRouter] Forecast {} -> {} by size cap (marketCap={})", r.returnMultiple(), capped, f.marketCap());
+        return new ThesisAiResponse(
+                r.fullBuyThesis(), r.savedBuyThesisSummary(), r.finalRating(), r.conviction(), r.portfolioRole(),
+                r.coreThesis(), r.businessEssence(), r.growthDrivers(), r.moatSummary(), r.financialQuality(),
+                r.valuationView(), r.mainRisks(), r.thesisBreakTriggers(), r.dailyReviewFocus(),
+                capped, basis);
+    }
+
+    private int sizeCeilingIndex(double marketCap) {
+        if (marketCap > 3e12) return 0;     // > $3T  -> "2x"
+        if (marketCap > 1e12) return 1;     // $1-3T  -> "3-5x"
+        if (marketCap > 250e9) return 2;    // $250B-1T -> "5-10x"
+        return 3;                            // < $250B -> "10x+"
     }
 
     private String buildCompactThesisUserPrompt(Stock stock, String fundamentalsJson) {

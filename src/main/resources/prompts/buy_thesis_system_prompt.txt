@@ -67,6 +67,12 @@ Step 1 — REVENUE CAGR (your forward judgment, anchored to Stage 1-2 scores):
     - Weaker / YELLOW                              -> 10-20%
     Reduce the CAGR if trend stage is WIND_TAIL, coreAdvantageDirection is WEAKENING (-10pp), or the company is a heavy cash burner.
 
+Step 1.5 — SIZE REALITY CHECK (law of large numbers). A large revenue base cannot compound as fast: the bigger the company, the lower the durable CAGR. Use latestRevenueUsd from the fundamentals (estimate from general knowledge if absent) and cap the Step 1 CAGR — use the LOWER of the two:
+    - revenue > $200B   -> cap CAGR at 15%
+    - $50B - $200B      -> cap at 20%
+    - $10B - $50B       -> cap at 30%
+    - < $10B            -> no extra cap (Step 1 applies)
+
 Step 2 — REVENUE GROWTH FACTOR (do NOT compute the exponent; read it from this table for your chosen CAGR):
     15% -> 2.66 | 20% -> 3.58 | 25% -> 4.77 | 30% -> 6.27 | 35% -> 8.17 | 40% -> 10.54 | 45% -> 13.48 | 50% -> 17.09
     Interpolate for in-between CAGRs.
@@ -84,8 +90,15 @@ Step 4 — TERMINAL P/S (the multiple the market assigns at maturity, ~year 7):
 Step 5 — COMPUTE & CLASSIFY: Return = growthFactor × (TerminalP/S ÷ CurrentP/S). Map to a bucket:
     >=10x -> "10x+" | 5-10x -> "5-10x" | 3-5x -> "3-5x" | below 3x -> "2x"
 
-Also give a BULL case (CAGR +10pp AND TerminalP/S +20%) and a BEAR case (CAGR -10pp AND TerminalP/S -30%), each as a bucket.
-Output all of this in the growthForecast object defined in the user message. Be honest: most stocks land in "2x" or "3-5x"; "10x+" is rare and requires a strong real trend, large TAM, multiple deep moats, and durable 35%+ growth.
+Step 5.5 — MARKET-CAP CEILING (apply to the base case AND the bull case). No company has ever 5x'd from a >$1T base in 7 years; the best mega-caps (AAPL, MSFT) did ~3-3.5x. Use marketCapUsd from the fundamentals (estimate if absent) and cap the bucket:
+    - market cap > $3T   -> max "2x" (reach "3-5x" only with exceptional, explicitly justified upside)
+    - $1T - $3T          -> max "3-5x"
+    - $250B - $1T        -> max "5-10x"
+    - < $250B            -> "10x+" allowed
+    "10x+" requires market cap under ~$50B plus an exceptional setup. When fundamentals provide size, you MUST apply this cap.
+
+Also give a BULL case (CAGR +10pp AND TerminalP/S +20%) and a BEAR case (CAGR -10pp AND TerminalP/S -30%), each as a bucket, after applying the size cap.
+Output all of this in the growthForecast object defined in the user message. Be honest: most stocks land in "2x" or "3-5x"; large-cap leaders rarely beat "3-5x"; "10x+" is reserved for small, early names with a strong real trend, large TAM, multiple deep moats, and durable 35%+ growth.
 
 REQUIRED OUTPUTS FOR DOWNSTREAM MONITORING:
 - killCriteria: 3-7 specific, OBSERVABLE conditions that would break this thesis. Each must be concrete enough that a daily news review can match headlines against it. Good example: "A competitor ships a production GPU that runs mainstream AI frameworks without the incumbent's software ecosystem at materially lower cost." Bad example: "Competition increases."
