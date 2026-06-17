@@ -55,6 +55,71 @@ public class OpenBbClient {
         }
     }
 
+    // Best-effort valuation + revenue snapshot for the buy-thesis growth forecast. Both calls
+    // fail safe to null/empty (yfinance is rate-limited), so thesis generation never blocks on it.
+    public FundamentalsSnapshot fetchFundamentals(String symbol) {
+        OpenBbMetrics metrics = fetchMetrics(symbol);
+        List<OpenBbIncomeItem> income = fetchIncome(symbol);
+
+        Double latestRevenue = null;
+        Double priorRevenue = null;
+        if (!income.isEmpty()) {
+            // Sort newest-first by period so the two most recent annual statements drive growth.
+            List<OpenBbIncomeItem> sorted = income.stream()
+                    .filter(i -> i.periodEnding() != null && i.totalRevenue() != null)
+                    .sorted((a, b) -> b.periodEnding().compareTo(a.periodEnding()))
+                    .toList();
+            if (!sorted.isEmpty()) latestRevenue = sorted.get(0).totalRevenue();
+            if (sorted.size() > 1) priorRevenue = sorted.get(1).totalRevenue();
+        }
+
+        FundamentalsSnapshot snapshot = new FundamentalsSnapshot(
+                metrics == null ? null : metrics.priceToSales(),
+                metrics == null ? null : metrics.peRatio(),
+                metrics == null ? null : metrics.marketCap(),
+                latestRevenue,
+                priorRevenue);
+        return snapshot.hasAny() ? snapshot : null;
+    }
+
+    private OpenBbMetrics fetchMetrics(String symbol) {
+        try {
+            OpenBbMetricsResponse response = restClient.get()
+                    .uri(b -> b.path("/api/v1/equity/fundamental/metrics")
+                            .queryParam("symbol", symbol)
+                            .queryParam("provider", "yfinance")
+                            .build())
+                    .retrieve()
+                    .body(OpenBbMetricsResponse.class);
+            if (response == null || response.results() == null || response.results().isEmpty()) {
+                return null;
+            }
+            return response.results().get(0);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private List<OpenBbIncomeItem> fetchIncome(String symbol) {
+        try {
+            OpenBbIncomeResponse response = restClient.get()
+                    .uri(b -> b.path("/api/v1/equity/fundamental/income")
+                            .queryParam("symbol", symbol)
+                            .queryParam("provider", "yfinance")
+                            .queryParam("period", "annual")
+                            .queryParam("limit", 2)
+                            .build())
+                    .retrieve()
+                    .body(OpenBbIncomeResponse.class);
+            if (response == null || response.results() == null) {
+                return List.of();
+            }
+            return response.results();
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
     // US-listed equity search via the SEC provider (no API key needed); returns symbol + name.
     public List<OpenBbEquitySearchItem> searchEquities(String query) {
         try {

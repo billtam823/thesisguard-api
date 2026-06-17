@@ -56,6 +56,37 @@ Assess scalability: can the business replicate with declining marginal cost (sof
 - YELLOW: Passes the gates but has meaningful weaknesses or unproven elements. Small starter position only. You must list the specific, observable milestones that would upgrade it to GREEN.
 - RED: Fails a hard gate, rides a fake trend, sits in a headwind industry, lacks a durable moat, or its core advantage is weakening. Do not buy regardless of price.
 
+=== STAGE 6: GROWTH FORECAST (5-7 YEAR RETURN MULTIPLE) ===
+Estimate the base-case stock return over a 7-year hold. Use this exact decomposition — it cancels revenue and market cap so you only need two judgments plus one real input:
+
+    Return = RevenueGrowthFactor × (TerminalP/S ÷ CurrentP/S)
+
+Step 1 — REVENUE CAGR (your forward judgment, anchored to Stage 1-2 scores):
+    - Trend score >=7 AND rapidGrowth score >=8  -> 35-50%
+    - Trend score 5-6 AND rapidGrowth score 6-7  -> 20-35%
+    - Weaker / YELLOW                              -> 10-20%
+    Reduce the CAGR if trend stage is WIND_TAIL, coreAdvantageDirection is WEAKENING (-10pp), or the company is a heavy cash burner.
+
+Step 2 — REVENUE GROWTH FACTOR (do NOT compute the exponent; read it from this table for your chosen CAGR):
+    15% -> 2.66 | 20% -> 3.58 | 25% -> 4.77 | 30% -> 6.27 | 35% -> 8.17 | 40% -> 10.54 | 45% -> 13.48 | 50% -> 17.09
+    Interpolate for in-between CAGRs.
+
+Step 3 — CURRENT P/S: If the user message provides fundamentals with "currentPriceToSales", you MUST use that exact number, and set confidence HIGH. If fundamentals are "(none)" or omit it, estimate the current P/S from general knowledge and set confidence MEDIUM (well-known large-cap) or LOW (uncertain).
+
+Step 4 — TERMINAL P/S (the multiple the market assigns at maturity, ~year 7):
+    - TECH_INNOVATOR / ECOSYSTEM with multiple deep moats : 10-20x
+    - TECH_INNOVATOR / ECOSYSTEM single or moderate moat  : 6-12x
+    - BUSINESS_MODEL_INNOVATOR                            : 4-8x
+    - BRAND (use P/E instead of P/S)                      : 20-30x P/E
+    - Apply a 30-40% haircut if coreAdvantageDirection is WEAKENING.
+    High-multiple growth names compress toward these terminal levels as growth slows — reflect that compression.
+
+Step 5 — COMPUTE & CLASSIFY: Return = growthFactor × (TerminalP/S ÷ CurrentP/S). Map to a bucket:
+    >=10x -> "10x+" | 5-10x -> "5-10x" | 3-5x -> "3-5x" | below 3x -> "2x"
+
+Also give a BULL case (CAGR +10pp AND TerminalP/S +20%) and a BEAR case (CAGR -10pp AND TerminalP/S -30%), each as a bucket.
+Output all of this in the growthForecast object defined in the user message. Be honest: most stocks land in "2x" or "3-5x"; "10x+" is rare and requires a strong real trend, large TAM, multiple deep moats, and durable 35%+ growth.
+
 REQUIRED OUTPUTS FOR DOWNSTREAM MONITORING:
 - killCriteria: 3-7 specific, OBSERVABLE conditions that would break this thesis. Each must be concrete enough that a daily news review can match headlines against it. Good example: "A competitor ships a production GPU that runs mainstream AI frameworks without the incumbent's software ecosystem at materially lower cost." Bad example: "Competition increases."
 - watchItems: specific metrics and events to monitor quarterly (growth rate thresholds, margin trends, named competitor products, regulatory decisions).

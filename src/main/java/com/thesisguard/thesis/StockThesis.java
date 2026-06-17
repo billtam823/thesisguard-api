@@ -67,6 +67,14 @@ public class StockThesis {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String dailyReviewFocus;
 
+    // 5-7 year return forecast bucket (e.g. "5-10x") and the derivation behind it. AI-only,
+    // nullable because the compact fallback and older theses omit it.
+    @Column(length = 16)
+    private String returnMultiple;
+
+    @Column(columnDefinition = "TEXT")
+    private String returnBasis;
+
     // Set to RUNNING while AI is generating asynchronously; DONE on success; FAILED on error.
     @Column(length = 16)
     private String generationStatus;

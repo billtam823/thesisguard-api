@@ -92,6 +92,8 @@ public class StockThesisService {
         thesis.setMainRisks(source.mainRisks());
         thesis.setThesisBreakTriggers(source.thesisBreakTriggers());
         thesis.setDailyReviewFocus(source.dailyReviewFocus());
+        thesis.setReturnMultiple(source.returnMultiple());
+        thesis.setReturnBasis(source.returnBasis());
     }
 
     private void apply(StockThesis thesis, StockThesisUpdateRequest source) {

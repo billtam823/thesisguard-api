@@ -74,7 +74,17 @@ Hard output constraints:
   "thesisSummary": "string",
   "killCriteria": ["string"],
   "watchItems": ["string"],
-  "upgradeMilestones": ["string"]
+  "upgradeMilestones": ["string"],
+  "growthForecast": {
+    "returnMultiple": "2x | 3-5x | 5-10x | 10x+",
+    "revenueCagr": "string (e.g. '35%')",
+    "currentPriceToSales": 0,
+    "terminalMultipleAssumption": "string (e.g. 'P/S 25x->12x at maturity')",
+    "basis": "string",
+    "bearCase": "2x | 3-5x | 5-10x | 10x+",
+    "bullCase": "2x | 3-5x | 5-10x | 10x+",
+    "confidence": "LOW | MEDIUM | HIGH"
+  }
 }
 
 Notes on fields:
@@ -84,3 +94,4 @@ Notes on fields:
 - killCriteria: 3-7 specific observable conditions that would BREAK this thesis (consumed by the daily review).
 - watchItems: specific metrics/events to monitor quarterly.
 - upgradeMilestones: only for YELLOW verdicts, the milestones that would upgrade to GREEN; empty array otherwise.
+- growthForecast: follow Stage 6. Return = revenueGrowthFactor(CAGR) x (terminalP/S / currentP/S). If the fundamentals above provide currentPriceToSales, you MUST use it and set confidence HIGH; otherwise estimate it and set confidence MEDIUM/LOW. Echo the P/S you used in currentPriceToSales.

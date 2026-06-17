@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.thesisguard.common.exception.ApiException;
+import com.thesisguard.openbb.FundamentalsSnapshot;
+import com.thesisguard.openbb.OpenBbClient;
 import com.thesisguard.news.NewsItem;
 import com.thesisguard.review.NewsTriageResult;
 import com.thesisguard.review.ReviewAiResponse;
@@ -52,6 +54,7 @@ public class OpenRouterAiClient implements AiClient {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final OpenBbClient openBbClient;
     private final String thesisModel;
     private final String reviewModel;
     private final String triageModel;
@@ -62,13 +65,14 @@ public class OpenRouterAiClient implements AiClient {
     private final String newsTriageSystemPrompt;
     private final String newsTriageUserTemplate;
 
-    public OpenRouterAiClient(OpenRouterProperties properties, ObjectMapper objectMapper) {
+    public OpenRouterAiClient(OpenRouterProperties properties, ObjectMapper objectMapper, OpenBbClient openBbClient) {
         this.restClient = RestClient.builder()
                 .baseUrl(BASE_URL)
                 .defaultHeader("Authorization", "Bearer " + properties.apiKey())
                 .defaultHeader("Content-Type", "application/json")
                 .build();
         this.objectMapper = objectMapper;
+        this.openBbClient = openBbClient;
         this.thesisModel = properties.model() != null ? properties.model() : "google/gemini-2.0-flash-exp:free";
         this.reviewModel = properties.reviewModel() != null ? properties.reviewModel() : this.thesisModel;
         // Triage is the cheap pre-filter; fall back to the review model when no cheap model is configured.
@@ -433,8 +437,26 @@ public class OpenRouterAiClient implements AiClient {
                         "Failed gates: " + joinArray(root.path("exclusionGates").path("failedGates"))
                 ),
                 joinArray(root.path("killCriteria")),
-                joinArray(root.path("watchItems"))
+                joinArray(root.path("watchItems")),
+                text(root.path("growthForecast"), "returnMultiple"),
+                buildReturnBasis(root.path("growthForecast"))
         );
+    }
+
+    // Flatten the growthForecast node into a single human-readable line for the UI panel.
+    private String buildReturnBasis(JsonNode gf) {
+        if (gf == null || gf.isMissingNode() || gf.isNull()) {
+            return null;
+        }
+        String basis = joinNonBlank(
+                "CAGR: " + text(gf, "revenueCagr"),
+                text(gf, "terminalMultipleAssumption"),
+                text(gf, "basis"),
+                "Bear: " + text(gf, "bearCase"),
+                "Bull: " + text(gf, "bullCase"),
+                "Confidence: " + text(gf, "confidence")
+        );
+        return basis.isBlank() ? null : basis;
     }
 
     private ThesisAiResponse mapCompactThesisResponse(String json, Stock stock) {
@@ -460,7 +482,9 @@ public class OpenRouterAiClient implements AiClient {
                 text(root, "valuationView"),
                 risks,
                 killCriteria,
-                watchItems.isBlank() ? "Monitor quarterly fundamentals, moat signals, valuation, and thesis-breaking events for " + stock.getTicker() + "." : watchItems
+                watchItems.isBlank() ? "Monitor quarterly fundamentals, moat signals, valuation, and thesis-breaking events for " + stock.getTicker() + "." : watchItems,
+                null,
+                null
         );
     }
 
@@ -547,7 +571,40 @@ public class OpenRouterAiClient implements AiClient {
                 "{{ticker}}", stock.getTicker(),
                 "{{companyName}}", stock.getCompanyName(),
                 "{{userNotes}}", NO_DATA,
-                "{{fundamentalsJson}}", NO_DATA);
+                "{{fundamentalsJson}}", buildFundamentalsJson(stock));
+    }
+
+    // Best-effort real fundamentals for the growth forecast. Returns NO_DATA when OpenBB is
+    // unavailable/rate-limited so the prompt falls back to a low-confidence estimate.
+    private String buildFundamentalsJson(Stock stock) {
+        FundamentalsSnapshot f;
+        try {
+            f = openBbClient.fetchFundamentals(stock.getProviderTicker());
+        } catch (Exception ex) {
+            log.debug("[OpenRouter] Fundamentals fetch failed for {}: {}", stock.getTicker(), ex.getMessage());
+            f = null;
+        }
+        if (f == null) {
+            return NO_DATA;
+        }
+        ObjectNode node = objectMapper.createObjectNode();
+        if (f.priceToSales() != null) node.put("currentPriceToSales", round(f.priceToSales(), 2));
+        if (f.peRatio() != null) node.put("peRatio", round(f.peRatio(), 2));
+        if (f.marketCap() != null) node.put("marketCapUsd", f.marketCap());
+        if (f.latestRevenue() != null) node.put("latestRevenueUsd", f.latestRevenue());
+        Double growth = f.historicalRevenueGrowthPct();
+        if (growth != null) node.put("historicalRevenueGrowthPct", round(growth, 1));
+        if (node.size() == 0) {
+            return NO_DATA;
+        }
+        // Logged so the OpenBB field mapping can be confirmed during the live test.
+        log.debug("[OpenRouter] Fundamentals for {}: {}", stock.getTicker(), node);
+        return node.toString();
+    }
+
+    private double round(double value, int decimals) {
+        double factor = Math.pow(10, decimals);
+        return Math.round(value * factor) / factor;
     }
 
     private String buildCompactThesisUserPrompt(Stock stock) {

@@ -61,7 +61,9 @@ public class MockAiClient implements AiClient {
                   "valuation_view": "Reasonable — mock view only. Use Gemini API key for real valuation analysis.",
                   "main_risks": "1. Execution missteps\\n2. Competition intensifying\\n3. Regulatory headwinds\\n4. Margin compression\\n5. Demand slowdown\\n6. Valuation multiple contraction",
                   "thesis_break_triggers": "Core moat weakening, revenue growth structurally slowing, margin collapse, management credibility issue, bubble-like valuation.",
-                  "daily_review_focus": "Demand changes, competitive threats, regulation, management execution, financial quality signals, and thesis-break triggers."
+                  "daily_review_focus": "Demand changes, competitive threats, regulation, management execution, financial quality signals, and thesis-break triggers.",
+                  "return_multiple": "5-10x",
+                  "return_basis": "CAGR: 30% (mock)\\nP/S 25x->12x at maturity\\nMock estimate; replace AiClient with a real provider.\\nBear: 3-5x\\nBull: 10x+\\nConfidence: MEDIUM"
                 }
                 """.formatted(stock.getCompanyName(), stock.getTicker());
         return read(json, ThesisAiResponse.class);

@@ -16,6 +16,8 @@ public record ThesisAiResponse(
         @JsonProperty("valuation_view") String valuationView,
         @JsonProperty("main_risks") String mainRisks,
         @JsonProperty("thesis_break_triggers") String thesisBreakTriggers,
-        @JsonProperty("daily_review_focus") String dailyReviewFocus
+        @JsonProperty("daily_review_focus") String dailyReviewFocus,
+        @JsonProperty("return_multiple") String returnMultiple,
+        @JsonProperty("return_basis") String returnBasis
 ) {
 }
