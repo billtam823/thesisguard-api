@@ -47,7 +47,11 @@ finnhub:
   # the codebase as a fallback; put a key here + re-wire NewsItemService to use it again.
 
 openrouter:
-  model: nex-agi/nex-n2-pro:free
+  # Thesis model: MUST support structured outputs (json_schema) and allow reasoning to be disabled.
+  # gemini-3.5-flash fits: structured_outputs + optional reasoning (our effort:none disables it),
+  # cheap, reliable. gpt-5.4-nano does NOT support structured outputs (request 404s). For deeper
+  # analysis, swap in a larger structured-outputs model -- check openrouter.ai/models filters.
+  model: google/gemini-3.5-flash
   review-model: openai/gpt-5.4-nano
   # Cheap model for the news triage pre-filter (material vs noise). Defaults to review-model when unset.
   triage-model: openai/gpt-5.4-nano

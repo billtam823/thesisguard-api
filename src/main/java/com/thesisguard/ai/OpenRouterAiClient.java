@@ -62,6 +62,7 @@ public class OpenRouterAiClient implements AiClient {
     private final String triageModel;
     private final String buyThesisSystemPrompt;
     private final String buyThesisUserTemplate;
+    private final ResponseFormat buyThesisResponseFormat;
     private final String dailyReviewSystemPrompt;
     private final String dailyReviewUserTemplate;
     private final String newsTriageSystemPrompt;
@@ -81,6 +82,7 @@ public class OpenRouterAiClient implements AiClient {
         this.triageModel = properties.triageModel() != null ? properties.triageModel() : this.reviewModel;
         this.buyThesisSystemPrompt = loadPrompt("prompts/buy_thesis_system_prompt.txt");
         this.buyThesisUserTemplate = loadPrompt("prompts/buy_thesis_user_template.txt");
+        this.buyThesisResponseFormat = loadThesisResponseFormat();
         this.dailyReviewSystemPrompt = loadPrompt("prompts/daily_review_system_prompt.txt");
         this.dailyReviewUserTemplate = loadPrompt("prompts/daily_review_user_template.txt");
         this.newsTriageSystemPrompt = loadPrompt("prompts/news_triage_system_prompt.txt");
@@ -95,7 +97,7 @@ public class OpenRouterAiClient implements AiClient {
         String fundamentalsJson = buildFundamentalsJson(stock, fundamentals);
         ThesisAiResponse response;
         try {
-            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 6000);
+            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 12000, buyThesisResponseFormat);
             response = mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
@@ -206,16 +208,23 @@ public class OpenRouterAiClient implements AiClient {
     }
 
     private String callOpenRouter(String model, String systemPrompt, String userPrompt, double temperature, int maxTokens) {
-        log.debug("[OpenRouter] Sending system prompt ({} chars) and user prompt ({} chars) to model '{}'",
-                systemPrompt.length(), userPrompt.length(), model);
+        return callOpenRouter(model, systemPrompt, userPrompt, temperature, maxTokens, null);
+    }
+
+    // primaryFormat is the response_format sent on the first attempt (null = plain text, or a
+    // json_schema spec for enforced structured outputs). On empty content we still retry json_object.
+    private String callOpenRouter(String model, String systemPrompt, String userPrompt, double temperature,
+                                  int maxTokens, ResponseFormat primaryFormat) {
+        log.debug("[OpenRouter] Sending system prompt ({} chars) and user prompt ({} chars) to model '{}' (structured={})",
+                systemPrompt.length(), userPrompt.length(), model, primaryFormat != null && primaryFormat.jsonSchema() != null);
         try {
-            OpenRouterRequest plainRequest = buildRequest(model, systemPrompt, userPrompt, temperature, maxTokens, null);
-            OpenRouterResponse response = executeRequest(plainRequest);
+            OpenRouterRequest primaryRequest = buildRequest(model, systemPrompt, userPrompt, temperature, maxTokens, primaryFormat);
+            OpenRouterResponse response = executeRequest(primaryRequest);
             String text;
             try {
                 text = extractText(response);
             } catch (EmptyMessageContentException ex) {
-                log.debug("[OpenRouter] Empty content without response_format; retrying with response_format=json_object");
+                log.debug("[OpenRouter] Empty content; retrying with response_format=json_object");
                 OpenRouterRequest jsonRequest = buildRequest(model, systemPrompt, userPrompt, temperature, maxTokens, new ResponseFormat("json_object"));
                 text = extractText(executeRequest(jsonRequest));
             }
@@ -235,13 +244,23 @@ public class OpenRouterAiClient implements AiClient {
 
     private OpenRouterRequest buildRequest(String model, String systemPrompt, String userPrompt, double temperature,
                                            int maxTokens, ResponseFormat responseFormat) {
+        boolean structured = responseFormat != null && responseFormat.jsonSchema() != null;
+        // When enforcing a strict schema, require providers that honor it so failures are explicit.
+        ProviderConfig provider = structured ? new ProviderConfig(true) : null;
+        // Reasoning support is a per-MODEL trait, not per-request: the thesis model mandates reasoning
+        // (effort:"none" is rejected), so use low-effort reasoning (excluded from output) for all its
+        // calls (primary, compact fallback, json_object retry). Other models keep reasoning disabled.
+        ReasoningConfig reasoning = model.equals(thesisModel)
+                ? new ReasoningConfig("low", true)
+                : new ReasoningConfig("none", true);
         return new OpenRouterRequest(
                 model,
                 List.of(new RequestMessage("system", systemPrompt), new RequestMessage("user", userPrompt)),
                 responseFormat,
                 temperature,
                 maxTokens,
-                new ReasoningConfig("none", true)
+                reasoning,
+                provider
         );
     }
 
@@ -310,6 +329,16 @@ public class OpenRouterAiClient implements AiClient {
             return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to load AI prompt resource: " + path, ex);
+        }
+    }
+
+    // Loads the strict JSON schema that enforces the buy-thesis output shape (structured outputs).
+    private ResponseFormat loadThesisResponseFormat() {
+        try {
+            JsonNode schema = objectMapper.readTree(loadPrompt("prompts/buy_thesis_schema.json"));
+            return new ResponseFormat("json_schema", new JsonSchemaSpec("buy_thesis", true, schema));
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load buy-thesis JSON schema", ex);
         }
     }
 
@@ -863,14 +892,30 @@ public class OpenRouterAiClient implements AiClient {
             @JsonProperty("response_format") ResponseFormat responseFormat,
             Double temperature,
             @JsonProperty("max_tokens") Integer maxTokens,
-            ReasoningConfig reasoning
+            ReasoningConfig reasoning,
+            ProviderConfig provider
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record ReasoningConfig(String effort, Boolean exclude) {}
 
+    // response_format: either {"type":"json_object"} or strict structured outputs
+    // {"type":"json_schema","json_schema":{...}}. json_schema is omitted for json_object.
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record ResponseFormat(String type) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record ResponseFormat(String type, @JsonProperty("json_schema") JsonSchemaSpec jsonSchema) {
+        ResponseFormat(String type) {
+            this(type, null);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record JsonSchemaSpec(String name, Boolean strict, JsonNode schema) {}
+
+    // Forces OpenRouter to only route to providers that honor the request's parameters
+    // (e.g. structured outputs), so an unsupported model errors loudly instead of degrading.
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ProviderConfig(@JsonProperty("require_parameters") Boolean requireParameters) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record RequestMessage(String role, String content) {}
