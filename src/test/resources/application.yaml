@@ -10,4 +10,4 @@ spring:
     show-sql: false
 
 openbb:
-  base-url: https://openbb.kingheung.com
+  base-url: https://openbb.test

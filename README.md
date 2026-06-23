@@ -38,7 +38,7 @@ Not implemented yet:
 - Java 21, Spring Boot 3.5.14, Maven
 - Spring Web, Spring Data JPA, Bean Validation, Lombok
 - PostgreSQL (runtime), H2 in PostgreSQL mode (tests)
-- OpenBB Platform REST API (self-hosted at `https://openbb.kingheung.com`) for market data, SEC filings, and insider trades
+- OpenBB Platform REST API — **your own self-hosted instance** (deploy it yourself; secured with per-client `x-api-key` auth) for market data, SEC filings, and insider trades
 - Seeking Alpha via RapidAPI (`seeking-alpha-finance.p.rapidapi.com`) for company news
 - OpenRouter (`https://openrouter.ai/api/v1`) for AI generation
 - Frontend: React 18, Vite, MUI, TanStack Query, axios, react-router
@@ -208,7 +208,8 @@ spring:
       ddl-auto: update     # no migration files; Hibernate manages schema
 
 openbb:
-  base-url: https://openbb.kingheung.com
+  # Your own self-hosted OpenBB instance. Set the real base-url + api-key in application-local.yaml.
+  base-url: https://your-openbb-instance.example.com
   # api-key (per-client key matching the server's OPENBB_API_KEYS) lives in application-local.yaml.
 
 seekingalpha:
@@ -234,18 +235,19 @@ thesisguard:
 
 The scheduled fetch only **ingests** news into the backlog; reviews remain user-triggered (run `POST .../review-news` when you want the day's grouped judgment).
 
-Secrets are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the OpenRouter key to fall back to `MockAiClient`, and omit the Seeking Alpha key to have company-news fetches return empty. The OpenBB API now requires a per-client key (must match the server's `OPENBB_API_KEYS`). The local Postgres password also lives here:
+Local-only config and secrets are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`). This includes **your own OpenBB instance URL** (`openbb.base-url`) and its per-client `openbb.api-key` (must match the server's `OPENBB_API_KEYS`) — keeping your instance URL out of the tracked repo. Omit the OpenRouter key to fall back to `MockAiClient`, and omit the Seeking Alpha key to have company-news fetches return empty. The local Postgres password also lives here:
 
 ```yaml
 spring:
   datasource:
     password: <your local postgres password>   # must match POSTGRES_PASSWORD in .env
+openbb:
+  base-url: https://your-openbb-instance.example.com   # your self-hosted OpenBB instance
+  api-key: <this client's OpenBB API key>
 openrouter:
   api-key: <your openrouter key>
 seekingalpha:
   api-key: <your rapidapi key>
-openbb:
-  api-key: <this client's OpenBB API key>
 ```
 
 `docker-compose.yml` reads the same password from a gitignored `.env` file at the repo root:

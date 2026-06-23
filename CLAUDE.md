@@ -104,7 +104,7 @@ All stock-scoped endpoints use `{stockCode}` (not a numeric ID). `StockService.g
 ```yaml
 # Key properties (application.yaml)
 spring.datasource.password: <in gitignored application-local.yaml; must match POSTGRES_PASSWORD in .env>
-openbb.base-url: https://openbb.kingheung.com  # SEC filings/insider (sec provider); yfinance news is fallback-only
+openbb.base-url: <your own self-hosted OpenBB Platform instance; real URL in gitignored application-local.yaml>  # SEC filings/insider (sec provider); yfinance news is fallback-only
 openbb.api-key: <in gitignored application-local.yaml; per-client key matching server OPENBB_API_KEYS. Required once OpenBB enforces auth>
 seekingalpha.host: seeking-alpha-finance.p.rapidapi.com  # company-news source (RapidAPI)
 seekingalpha.api-key: <in gitignored application-local.yaml; RapidAPI key. Without it, news fetches return empty>
@@ -119,7 +119,9 @@ thesisguard.news-fetch.crons: <list of cron exprs for automatic ingest-only fetc
 thesisguard.news-fetch.zone: <ZoneId for the fetch crons, e.g. America/New_York>
 ```
 
-**Secrets** are never committed. They live in two gitignored files at the repo root: `application-local.yaml` (loaded via `spring.config.import`) holds `openrouter.api-key`, `seekingalpha.api-key`, `openbb.api-key`, and `spring.datasource.password`; `.env` holds `POSTGRES_PASSWORD` (read by `docker-compose`, which fails fast if unset). The two passwords must match. The tracked `application.yaml`/`docker-compose.yml` contain only references and placeholders — no secret values.
+**OpenBB is self-hosted by you.** ThesisGuard talks to *your own* OpenBB Platform instance (deploy it yourself — e.g. the `billtam823/OpenBB` fork's `Dockerfile`), secured with per-client `x-api-key` auth (`OPENBB_API_AUTH`/`OPENBB_API_AUTH_EXTENSION=apikey_auth`/`OPENBB_API_KEYS` on the server). Set `openbb.base-url` to your instance and `openbb.api-key` to your client key — both in the gitignored `application-local.yaml`, so your instance URL never lands in the repo. The tracked `application.yaml` ships a placeholder `base-url`.
+
+**Secrets / local-only config** are never committed. They live in two gitignored files at the repo root: `application-local.yaml` (loaded via `spring.config.import`) holds `openbb.base-url`, `openbb.api-key`, `openrouter.api-key`, `seekingalpha.api-key`, and `spring.datasource.password`; `.env` holds `POSTGRES_PASSWORD` (read by `docker-compose`, which fails fast if unset). The two passwords must match. The tracked `application.yaml`/`docker-compose.yml` contain only references and placeholders — no real values.
 
 Tests use `src/test/resources/application.yaml` which swaps the datasource to H2 (`MODE=PostgreSQL`) with `ddl-auto: create-drop`. No Docker needed for tests.
 
