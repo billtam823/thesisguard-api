@@ -27,10 +27,12 @@ public class OpenBbClient {
 
     private final RestClient restClient;
 
-    public OpenBbClient(OpenBbProperties properties) {
-        this.restClient = RestClient.builder()
-                .baseUrl(properties.baseUrl())
-                .build();
+    public OpenBbClient(OpenBbProperties properties, RestClient.Builder builder) {
+        RestClient.Builder configured = builder.baseUrl(properties.baseUrl());
+        if (properties.apiKey() != null && !properties.apiKey().isBlank()) {
+            configured = configured.defaultHeader("x-api-key", properties.apiKey());
+        }
+        this.restClient = configured.build();
     }
 
     public OpenBbEquityProfile fetchProfile(String symbol) {
