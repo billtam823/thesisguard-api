@@ -51,17 +51,19 @@ finnhub:
   # the codebase as a fallback; put a key here + re-wire NewsItemService to use it again.
 
 openrouter:
-  # Thesis model: MUST support structured outputs (json_schema) and allow reasoning to be disabled.
-  # gemini-3.5-flash fits: structured_outputs + optional reasoning (our effort:none disables it),
-  # cheap, reliable. gpt-5.4-nano does NOT support structured outputs (request 404s). For deeper
-  # analysis, swap in a larger structured-outputs model -- check openrouter.ai/models filters.
-  model: google/gemini-3.5-flash
-  review-model: openai/gpt-5.4-nano
+  # FREE-MODEL config (for the Dokploy demo — $0 LLM cost).
+  # Thesis model MUST support structured outputs (json_schema); google/gemini-2.0-flash-exp:free
+  # does (Google honors response_format=json_schema). Review/triage only need plain JSON, so any
+  # free model works. Free models are rate-limited (~50 req/day on OpenRouter) — fine for a demo.
+  # For production, swap back to a paid structured-outputs model (e.g. google/gemini-3.5-flash) —
+  # ideally via env vars (OPENROUTER_MODEL, OPENROUTER_REVIEW_MODEL, OPENROUTER_TRIAGE_MODEL) so
+  # this file stays demo-ready. Browse current free models at openrouter.ai/models?max_price=0.
+  model: google/gemini-2.0-flash-exp:free
+  review-model: google/gemini-2.0-flash-exp:free
   # Cheap model for the news triage pre-filter (material vs noise). Defaults to review-model when unset.
-  triage-model: openai/gpt-5.4-nano
-  # Model used for the AI web-search news collector. Needs a model that supports the
-  # openrouter:web_search server tool. Defaults to review-model when unset.
-  news-search-model: openai/gpt-5.4-nano
+  triage-model: google/gemini-2.0-flash-exp:free
+  # Model used for the AI web-search news collector (disabled by default, so unused in the demo).
+  news-search-model: google/gemini-2.0-flash-exp:free
   # api-key lives in application-local.yaml (gitignored).
   # When api-key is set, OpenRouterAiClient is used. Otherwise MockAiClient is used.
 
