@@ -209,6 +209,7 @@ spring:
 
 openbb:
   base-url: https://openbb.kingheung.com
+  # api-key (per-client key matching the server's OPENBB_API_KEYS) lives in application-local.yaml.
 
 seekingalpha:
   host: seeking-alpha-finance.p.rapidapi.com
@@ -233,7 +234,7 @@ thesisguard:
 
 The scheduled fetch only **ingests** news into the backlog; reviews remain user-triggered (run `POST .../review-news` when you want the day's grouped judgment).
 
-Secrets are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the OpenRouter key to fall back to `MockAiClient`, and omit the Seeking Alpha key to have company-news fetches return empty. The local Postgres password also lives here:
+Secrets are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the OpenRouter key to fall back to `MockAiClient`, and omit the Seeking Alpha key to have company-news fetches return empty. The OpenBB API now requires a per-client key (must match the server's `OPENBB_API_KEYS`). The local Postgres password also lives here:
 
 ```yaml
 spring:
@@ -243,6 +244,8 @@ openrouter:
   api-key: <your openrouter key>
 seekingalpha:
   api-key: <your rapidapi key>
+openbb:
+  api-key: <this client's OpenBB API key>
 ```
 
 `docker-compose.yml` reads the same password from a gitignored `.env` file at the repo root:

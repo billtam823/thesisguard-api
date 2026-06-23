@@ -105,6 +105,7 @@ All stock-scoped endpoints use `{stockCode}` (not a numeric ID). `StockService.g
 # Key properties (application.yaml)
 spring.datasource.password: <in gitignored application-local.yaml; must match POSTGRES_PASSWORD in .env>
 openbb.base-url: https://openbb.kingheung.com  # SEC filings/insider (sec provider); yfinance news is fallback-only
+openbb.api-key: <in gitignored application-local.yaml; per-client key matching server OPENBB_API_KEYS. Required once OpenBB enforces auth>
 seekingalpha.host: seeking-alpha-finance.p.rapidapi.com  # company-news source (RapidAPI)
 seekingalpha.api-key: <in gitignored application-local.yaml; RapidAPI key. Without it, news fetches return empty>
 newsfilter.api-key: <unwired fallback news source>
@@ -118,7 +119,7 @@ thesisguard.news-fetch.crons: <list of cron exprs for automatic ingest-only fetc
 thesisguard.news-fetch.zone: <ZoneId for the fetch crons, e.g. America/New_York>
 ```
 
-**Secrets** are never committed. They live in two gitignored files at the repo root: `application-local.yaml` (loaded via `spring.config.import`) holds `openrouter.api-key`, `seekingalpha.api-key`, and `spring.datasource.password`; `.env` holds `POSTGRES_PASSWORD` (read by `docker-compose`, which fails fast if unset). The two passwords must match. The tracked `application.yaml`/`docker-compose.yml` contain only references and placeholders — no secret values.
+**Secrets** are never committed. They live in two gitignored files at the repo root: `application-local.yaml` (loaded via `spring.config.import`) holds `openrouter.api-key`, `seekingalpha.api-key`, `openbb.api-key`, and `spring.datasource.password`; `.env` holds `POSTGRES_PASSWORD` (read by `docker-compose`, which fails fast if unset). The two passwords must match. The tracked `application.yaml`/`docker-compose.yml` contain only references and placeholders — no secret values.
 
 Tests use `src/test/resources/application.yaml` which swaps the datasource to H2 (`MODE=PostgreSQL`) with `ddl-auto: create-drop`. No Docker needed for tests.
 

@@ -23,6 +23,8 @@ logging:
 
 openbb:
   base-url: https://openbb.kingheung.com
+  # api-key lives in application-local.yaml (gitignored); must match this client's entry in
+  # the server's OPENBB_API_KEYS. Without it, requests are rejected once the server enforces auth.
 
 seekingalpha:
   # Company-news source via RapidAPI (host seeking-alpha-finance.p.rapidapi.com).
