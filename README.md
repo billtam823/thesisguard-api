@@ -13,7 +13,7 @@ Implemented:
 
 - Watchlist stock CRUD with exchange auto-detection via OpenBB
 - AI-generated buy thesis (OpenRouter) with manual editing
-- Company news from Finnhub (`/company-news`); OpenBB's yfinance news client is kept but unused
+- Company news from Seeking Alpha (via RapidAPI); newsfilter.io, Finnhub, and OpenBB's yfinance news client remain as unwired fallbacks
 - Live SEC EDGAR previews from OpenBB (sec provider): per-ticker 8-K filings and Form 4 insider trades
 - Daily news item save/retrieval
 - Daily AI news review against the saved thesis
@@ -38,7 +38,8 @@ Not implemented yet:
 - Java 21, Spring Boot 3.5.14, Maven
 - Spring Web, Spring Data JPA, Bean Validation, Lombok
 - PostgreSQL (runtime), H2 in PostgreSQL mode (tests)
-- OpenBB Platform REST API (self-hosted at `https://openbb.kingheung.com`) for market data
+- OpenBB Platform REST API (self-hosted at `https://openbb.kingheung.com`) for market data, SEC filings, and insider trades
+- Seeking Alpha via RapidAPI (`seeking-alpha-finance.p.rapidapi.com`) for company news
 - OpenRouter (`https://openrouter.ai/api/v1`) for AI generation
 - Frontend: React 18, Vite, MUI, TanStack Query, axios, react-router
 
@@ -80,14 +81,14 @@ The triage step is a cheap first pass: it classifies each pending news item as *
 
 ## News & OpenBB Integration
 
-**Company news comes from Finnhub.** `FinnhubClient` calls `/company-news` (`https://finnhub.io/api/v1`) for headlines, mapped into `FetchedNewsItemResponse`. It needs `finnhub.api-key`; without a key, news fetches return empty (SEC filings/insider still work). `OpenBbClient.fetchCompanyNews` (yfinance) is kept for reference/fallback but is no longer called.
+**Company news comes from Seeking Alpha via RapidAPI.** `SeekingAlphaClient` calls `GET /v1/symbols/news` on `seeking-alpha-finance.p.rapidapi.com` (header auth via `x-rapidapi-key`), mapping the JSON:API response into `FetchedNewsItemResponse`. It needs `seekingalpha.api-key` (a RapidAPI key); without a key, company-news fetches return empty (SEC filings/insider still work). An optional AI web-search collector (`AiNewsSearchClient`) can supplement it but is disabled by default (`thesisguard.ai-news-search.enabled`). `NewsfilterClient`, `FinnhubClient`, and `OpenBbClient.fetchCompanyNews` (yfinance) remain in the codebase as unwired fallbacks.
 
 `OpenBbClient` wraps these OpenBB Platform REST endpoints:
 
 | Method | OpenBB endpoint | Provider | Used for |
 | --- | --- | --- | --- |
 | `fetchExchange` | `/api/v1/equity/profile` | yfinance | Exchange auto-detection on stock creation |
-| `fetchCompanyNews` | `/api/v1/news/company` | yfinance | *(kept, unused — news now via Finnhub)* |
+| `fetchCompanyNews` | `/api/v1/news/company` | yfinance | *(kept, unused — news now via Seeking Alpha)* |
 | `fetchCompanyFilings` | `/api/v1/equity/fundamental/filings` | sec | 8-K filings preview (form_type=8-K) |
 | `fetchInsiderTrading` | `/api/v1/equity/ownership/insider_trading` | sec | Form 4 insider trades preview |
 
@@ -157,7 +158,7 @@ All relationships are lazy; cascades (`ALL` + orphan removal) flow parent → ch
 
 ### News (live previews — no DB write)
 
-- `GET /api/stocks/{stockCode}/news/fetch?date=` — company news headlines from OpenBB/yfinance
+- `GET /api/stocks/{stockCode}/news/fetch?date=` — company news headlines from Seeking Alpha
 - `GET /api/stocks/{stockCode}/news/filings?date=` — SEC 8-K filings (all recent when `date` omitted; empty for non-US stocks)
 - `GET /api/stocks/{stockCode}/news/insider?date=` — SEC Form 4 insider trades (recent transactions when `date` omitted; empty for non-US stocks)
 
@@ -200,6 +201,8 @@ Run with `npm run dev` (port 5173); `npm run build` typechecks and bundles.
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/thesisguard
+    username: thesisguard_app
+    # password lives in application-local.yaml (gitignored); must match POSTGRES_PASSWORD in .env
   jpa:
     hibernate:
       ddl-auto: update     # no migration files; Hibernate manages schema
@@ -207,9 +210,9 @@ spring:
 openbb:
   base-url: https://openbb.kingheung.com
 
-finnhub:
-  base-url: https://finnhub.io/api/v1
-  # api-key lives in application-local.yaml; without it, company-news fetches return empty.
+seekingalpha:
+  host: seeking-alpha-finance.p.rapidapi.com
+  # api-key (a RapidAPI key) lives in application-local.yaml; without it, company-news fetches return empty.
 
 openrouter:
   model: <model for thesis generation>
@@ -219,6 +222,8 @@ openrouter:
 thesisguard:
   triage:
     enabled: true          # false = review every item, skipping the triage pre-filter
+  ai-news-search:
+    enabled: false         # optional AI web-search news supplement (off by default)
   news-fetch:                # automatic ingest-only fetch; empty crons disables it
     zone: America/New_York   # US market timezone (ET)
     crons:
@@ -228,21 +233,32 @@ thesisguard:
 
 The scheduled fetch only **ingests** news into the backlog; reviews remain user-triggered (run `POST .../review-news` when you want the day's grouped judgment).
 
-API keys are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the OpenRouter key to fall back to `MockAiClient`, and omit the Finnhub key to have company-news fetches return empty:
+Secrets are **not** committed. Put them in `application-local.yaml` at the repo root (gitignored, loaded via `spring.config.import`); omit the OpenRouter key to fall back to `MockAiClient`, and omit the Seeking Alpha key to have company-news fetches return empty. The local Postgres password also lives here:
 
 ```yaml
+spring:
+  datasource:
+    password: <your local postgres password>   # must match POSTGRES_PASSWORD in .env
 openrouter:
   api-key: <your openrouter key>
-finnhub:
-  api-key: <your finnhub key>
+seekingalpha:
+  api-key: <your rapidapi key>
+```
+
+`docker-compose.yml` reads the same password from a gitignored `.env` file at the repo root:
+
+```bash
+POSTGRES_PASSWORD=<your local postgres password>
 ```
 
 Tests swap the datasource to H2 (`MODE=PostgreSQL`, `ddl-auto: create-drop`) via `src/test/resources/application.yaml` — no Docker needed.
 
 ## Local Run
 
+First create the two gitignored secrets files at the repo root (see [Configuration](#configuration)): `.env` with `POSTGRES_PASSWORD=...` (read by `docker-compose`) and `application-local.yaml` with the matching `spring.datasource.password` plus your API keys.
+
 ```bash
-# Start PostgreSQL
+# Start PostgreSQL (reads POSTGRES_PASSWORD from .env)
 docker compose up -d
 
 # Run the API (Windows: .\mvnw.cmd spring-boot:run)

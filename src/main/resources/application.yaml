@@ -7,7 +7,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/thesisguard
     username: thesisguard_app
-    password: thesisguard_app_dev_123
+    # password lives in application-local.yaml (gitignored); must match docker-compose.yml.
   jpa:
     hibernate:
       ddl-auto: update

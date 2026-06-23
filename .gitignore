@@ -38,6 +38,10 @@ build/
 ### Local data & secrets ###
 data/
 application-local.yaml
+.env
+
+### Superpowers SDD scratch ###
+.superpowers/
 
 ### Tool artifacts ###
 .playwright-mcp/
