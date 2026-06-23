@@ -243,6 +243,10 @@ public class OpenBbClient {
         } catch (ApiException ex) {
             throw ex;
         } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 401) {
+                log.warn("OpenBB authentication failed (401) while trying to fetch insider trading — check openbb.api-key");
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "OpenBB authentication failed — check openbb.api-key");
+            }
             // OpenBB's SEC provider answers 400 "No Form 4 data was returned for X."
             // when the date range simply has no transactions — that is an empty
             // result, not an upstream failure.

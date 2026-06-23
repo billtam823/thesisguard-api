@@ -79,4 +79,18 @@ class OpenBbClientAuthTest {
         assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatus());
         assertTrue(ex.getMessage().contains("authentication failed"));
     }
+
+    @Test
+    void maps401ToClearAuthErrorForInsiderTrading() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        OpenBbClient client = new OpenBbClient(new OpenBbProperties("http://openbb.test", "bad-key"), builder);
+
+        server.expect(requestTo(startsWith("http://openbb.test/api/v1/equity/ownership/insider_trading")))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        ApiException ex = assertThrows(ApiException.class, () -> client.fetchInsiderTrading("NVDA", null, null, 10));
+        assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatus());
+        assertTrue(ex.getMessage().contains("authentication failed"));
+    }
 }
