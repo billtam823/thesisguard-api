@@ -1,0 +1,13 @@
+target/
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+HELP.md
+data/
+# Never bake local secrets into the image
+application-local.yaml
+.env
+docs/
+.superpowers/
