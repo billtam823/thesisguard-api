@@ -22,9 +22,11 @@ logging:
     com.thesisguard.thesis: DEBUG
 
 openbb:
-  base-url: https://openbb.kingheung.com
-  # api-key lives in application-local.yaml (gitignored); must match this client's entry in
-  # the server's OPENBB_API_KEYS. Without it, requests are rejected once the server enforces auth.
+  # Point this at YOUR OWN self-hosted OpenBB Platform instance. Override base-url (and the
+  # api-key) in application-local.yaml (gitignored) so your instance URL stays out of the repo.
+  base-url: https://your-openbb-instance.example.com
+  # api-key lives in application-local.yaml; must match this client's entry in the server's
+  # OPENBB_API_KEYS. Without it, requests are rejected once the server enforces auth.
 
 seekingalpha:
   # Company-news source via RapidAPI (host seeking-alpha-finance.p.rapidapi.com).
