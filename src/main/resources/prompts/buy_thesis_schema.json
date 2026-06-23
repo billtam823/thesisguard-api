@@ -1,0 +1,157 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticker", "companyName", "verdict", "suitableForLongTermHold", "convictionScore",
+    "exclusionGates", "trend", "fiveCriteria", "firstPrinciples", "companyType",
+    "scalability", "positionGuidance", "thesisSummary", "killCriteria", "watchItems",
+    "upgradeMilestones", "growthForecast"
+  ],
+  "properties": {
+    "ticker": { "type": "string" },
+    "companyName": { "type": "string" },
+    "verdict": { "type": "string", "enum": ["GREEN", "YELLOW", "RED"] },
+    "suitableForLongTermHold": { "type": "boolean" },
+    "convictionScore": { "type": "integer", "description": "0-100 overall conviction" },
+    "exclusionGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failedGates", "notes"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "failedGates": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "trend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["megaTrend", "isRealTrend", "eightFactorScore", "factorBreakdown", "stage", "stageRationale"],
+      "properties": {
+        "megaTrend": { "type": "string" },
+        "isRealTrend": { "type": "boolean" },
+        "eightFactorScore": { "type": "integer" },
+        "factorBreakdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["revolutionary", "disruptive", "scalable", "raisesProductivity", "technicallyMature", "sociallyAccepted", "hardToSubstitute", "viableBusinessModel"],
+          "properties": {
+            "revolutionary": { "type": "boolean" },
+            "disruptive": { "type": "boolean" },
+            "scalable": { "type": "boolean" },
+            "raisesProductivity": { "type": "boolean" },
+            "technicallyMature": { "type": "boolean" },
+            "sociallyAccepted": { "type": "boolean" },
+            "hardToSubstitute": { "type": "boolean" },
+            "viableBusinessModel": { "type": "boolean" }
+          }
+        },
+        "stage": { "type": "string", "enum": ["WIND_HEAD", "WIND_EYE", "WIND_TAIL"] },
+        "stageRationale": { "type": "string" }
+      }
+    },
+    "fiveCriteria": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["structuralTrend", "rapidGrowth", "moat", "cashFlow", "marketSize"],
+      "properties": {
+        "structuralTrend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "evidence"],
+          "properties": { "score": { "type": "integer" }, "evidence": { "type": "string" } }
+        },
+        "rapidGrowth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "evidence", "ruleOf40Value"],
+          "properties": {
+            "score": { "type": "integer" },
+            "evidence": { "type": "string" },
+            "ruleOf40Value": { "type": ["number", "null"] }
+          }
+        },
+        "moat": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "moatTypes", "moatDepth"],
+          "properties": {
+            "score": { "type": "integer" },
+            "moatTypes": { "type": "array", "items": { "type": "string" } },
+            "moatDepth": { "type": "string" }
+          }
+        },
+        "cashFlow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "evidence"],
+          "properties": { "score": { "type": "integer" }, "evidence": { "type": "string" } }
+        },
+        "marketSize": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "evidence"],
+          "properties": { "score": { "type": "integer" }, "evidence": { "type": "string" } }
+        }
+      }
+    },
+    "firstPrinciples": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trueIndustry", "industryWinningRules", "coreAdvantage", "coreAdvantageDirection", "paradigmShiftRisk"],
+      "properties": {
+        "trueIndustry": { "type": "string" },
+        "industryWinningRules": { "type": "string" },
+        "coreAdvantage": { "type": "string" },
+        "coreAdvantageDirection": { "type": "string", "enum": ["STRENGTHENING", "STABLE", "WEAKENING"] },
+        "paradigmShiftRisk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["threat", "probability", "timeline"],
+          "properties": {
+            "threat": { "type": "string" },
+            "probability": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+            "timeline": { "type": "string" }
+          }
+        }
+      }
+    },
+    "companyType": { "type": "string", "enum": ["TECH_INNOVATOR", "BUSINESS_MODEL_INNOVATOR", "BRAND", "ECOSYSTEM"] },
+    "scalability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scalable", "rationale"],
+      "properties": { "scalable": { "type": "boolean" }, "rationale": { "type": "string" } }
+    },
+    "positionGuidance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxPortfolioPercent", "entryStrategy", "horizonYears", "returnTarget"],
+      "properties": {
+        "maxPortfolioPercent": { "type": "number" },
+        "entryStrategy": { "type": "string" },
+        "horizonYears": { "type": "string" },
+        "returnTarget": { "type": "string" }
+      }
+    },
+    "thesisSummary": { "type": "string" },
+    "killCriteria": { "type": "array", "items": { "type": "string" } },
+    "watchItems": { "type": "array", "items": { "type": "string" } },
+    "upgradeMilestones": { "type": "array", "items": { "type": "string" } },
+    "growthForecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["returnMultiple", "revenueCagr", "currentPriceToSales", "terminalMultipleAssumption", "basis", "bearCase", "bullCase", "confidence"],
+      "properties": {
+        "returnMultiple": { "type": "string", "enum": ["2x", "3-5x", "5-10x", "10x+"] },
+        "revenueCagr": { "type": "string" },
+        "currentPriceToSales": { "type": ["number", "null"] },
+        "terminalMultipleAssumption": { "type": "string" },
+        "basis": { "type": "string" },
+        "bearCase": { "type": "string", "enum": ["2x", "3-5x", "5-10x", "10x+"] },
+        "bullCase": { "type": "string", "enum": ["2x", "3-5x", "5-10x", "10x+"] },
+        "confidence": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] }
+      }
+    }
+  }
+}

@@ -51,6 +51,8 @@ public class OpenRouterAiClient implements AiClient {
             Return only the requested minified JSON.
             """;
     private static final Pattern CODE_BLOCK = Pattern.compile("(?s)```[a-zA-Z]*\\n?(\\{.*?\\})\\n?```");
+    // Ordered weakest -> strongest; index used to clamp the forecast to a size-based ceiling.
+    private static final List<String> RETURN_BUCKETS = List.of("2x", "3-5x", "5-10x", "10x+");
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -60,6 +62,7 @@ public class OpenRouterAiClient implements AiClient {
     private final String triageModel;
     private final String buyThesisSystemPrompt;
     private final String buyThesisUserTemplate;
+    private final ResponseFormat buyThesisResponseFormat;
     private final String dailyReviewSystemPrompt;
     private final String dailyReviewUserTemplate;
     private final String newsTriageSystemPrompt;
@@ -79,6 +82,7 @@ public class OpenRouterAiClient implements AiClient {
         this.triageModel = properties.triageModel() != null ? properties.triageModel() : this.reviewModel;
         this.buyThesisSystemPrompt = loadPrompt("prompts/buy_thesis_system_prompt.txt");
         this.buyThesisUserTemplate = loadPrompt("prompts/buy_thesis_user_template.txt");
+        this.buyThesisResponseFormat = loadThesisResponseFormat();
         this.dailyReviewSystemPrompt = loadPrompt("prompts/daily_review_system_prompt.txt");
         this.dailyReviewUserTemplate = loadPrompt("prompts/daily_review_user_template.txt");
         this.newsTriageSystemPrompt = loadPrompt("prompts/news_triage_system_prompt.txt");
@@ -89,20 +93,25 @@ public class OpenRouterAiClient implements AiClient {
     public ThesisAiResponse generateBuyThesis(Stock stock) {
         // Fetch real fundamentals once and feed both the full and compact prompts so the growth
         // forecast survives the (frequent) truncation fallback on weaker models.
-        String fundamentalsJson = buildFundamentalsJson(stock);
+        FundamentalsSnapshot fundamentals = fetchFundamentalsSafe(stock);
+        String fundamentalsJson = buildFundamentalsJson(stock, fundamentals);
+        ThesisAiResponse response;
         try {
-            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 6000);
-            return mapThesisResponse(json);
+            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 12000, buyThesisResponseFormat);
+            response = mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
             try {
-                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 4000);
-                return mapCompactThesisResponse(compactJson, stock);
+                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 8000);
+                response = mapCompactThesisResponse(compactJson, stock);
             } catch (TruncatedJsonException compactEx) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY,
                         "OpenRouter model output was truncated even with the compact fallback schema. Switch to a model with a larger completion limit.");
             }
         }
+        // Weak models routinely ignore the prompt's size cap, so enforce the law-of-large-numbers
+        // ceiling deterministically against the real market cap. The model proposes; code clamps.
+        return clampForecastToSize(response, fundamentals);
     }
 
     @Override
@@ -199,16 +208,23 @@ public class OpenRouterAiClient implements AiClient {
     }
 
     private String callOpenRouter(String model, String systemPrompt, String userPrompt, double temperature, int maxTokens) {
-        log.debug("[OpenRouter] Sending system prompt ({} chars) and user prompt ({} chars) to model '{}'",
-                systemPrompt.length(), userPrompt.length(), model);
+        return callOpenRouter(model, systemPrompt, userPrompt, temperature, maxTokens, null);
+    }
+
+    // primaryFormat is the response_format sent on the first attempt (null = plain text, or a
+    // json_schema spec for enforced structured outputs). On empty content we still retry json_object.
+    private String callOpenRouter(String model, String systemPrompt, String userPrompt, double temperature,
+                                  int maxTokens, ResponseFormat primaryFormat) {
+        log.debug("[OpenRouter] Sending system prompt ({} chars) and user prompt ({} chars) to model '{}' (structured={})",
+                systemPrompt.length(), userPrompt.length(), model, primaryFormat != null && primaryFormat.jsonSchema() != null);
         try {
-            OpenRouterRequest plainRequest = buildRequest(model, systemPrompt, userPrompt, temperature, maxTokens, null);
-            OpenRouterResponse response = executeRequest(plainRequest);
+            OpenRouterRequest primaryRequest = buildRequest(model, systemPrompt, userPrompt, temperature, maxTokens, primaryFormat);
+            OpenRouterResponse response = executeRequest(primaryRequest);
             String text;
             try {
                 text = extractText(response);
             } catch (EmptyMessageContentException ex) {
-                log.debug("[OpenRouter] Empty content without response_format; retrying with response_format=json_object");
+                log.debug("[OpenRouter] Empty content; retrying with response_format=json_object");
                 OpenRouterRequest jsonRequest = buildRequest(model, systemPrompt, userPrompt, temperature, maxTokens, new ResponseFormat("json_object"));
                 text = extractText(executeRequest(jsonRequest));
             }
@@ -228,13 +244,23 @@ public class OpenRouterAiClient implements AiClient {
 
     private OpenRouterRequest buildRequest(String model, String systemPrompt, String userPrompt, double temperature,
                                            int maxTokens, ResponseFormat responseFormat) {
+        boolean structured = responseFormat != null && responseFormat.jsonSchema() != null;
+        // When enforcing a strict schema, require providers that honor it so failures are explicit.
+        ProviderConfig provider = structured ? new ProviderConfig(true) : null;
+        // Reasoning support is a per-MODEL trait, not per-request: the thesis model mandates reasoning
+        // (effort:"none" is rejected), so use low-effort reasoning (excluded from output) for all its
+        // calls (primary, compact fallback, json_object retry). Other models keep reasoning disabled.
+        ReasoningConfig reasoning = model.equals(thesisModel)
+                ? new ReasoningConfig("low", true)
+                : new ReasoningConfig("none", true);
         return new OpenRouterRequest(
                 model,
                 List.of(new RequestMessage("system", systemPrompt), new RequestMessage("user", userPrompt)),
                 responseFormat,
                 temperature,
                 maxTokens,
-                new ReasoningConfig("none", true)
+                reasoning,
+                provider
         );
     }
 
@@ -303,6 +329,16 @@ public class OpenRouterAiClient implements AiClient {
             return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to load AI prompt resource: " + path, ex);
+        }
+    }
+
+    // Loads the strict JSON schema that enforces the buy-thesis output shape (structured outputs).
+    private ResponseFormat loadThesisResponseFormat() {
+        try {
+            JsonNode schema = objectMapper.readTree(loadPrompt("prompts/buy_thesis_schema.json"));
+            return new ResponseFormat("json_schema", new JsonSchemaSpec("buy_thesis", true, schema));
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load buy-thesis JSON schema", ex);
         }
     }
 
@@ -577,16 +613,18 @@ public class OpenRouterAiClient implements AiClient {
                 "{{fundamentalsJson}}", fundamentalsJson);
     }
 
-    // Best-effort real fundamentals for the growth forecast. Returns NO_DATA when OpenBB is
-    // unavailable/rate-limited so the prompt falls back to a low-confidence estimate.
-    private String buildFundamentalsJson(Stock stock) {
-        FundamentalsSnapshot f;
+    private FundamentalsSnapshot fetchFundamentalsSafe(Stock stock) {
         try {
-            f = openBbClient.fetchFundamentals(stock.getProviderTicker());
+            return openBbClient.fetchFundamentals(stock.getProviderTicker());
         } catch (Exception ex) {
             log.debug("[OpenRouter] Fundamentals fetch failed for {}: {}", stock.getTicker(), ex.getMessage());
-            f = null;
+            return null;
         }
+    }
+
+    // Best-effort real fundamentals for the growth forecast. Returns NO_DATA when OpenBB is
+    // unavailable/rate-limited so the prompt falls back to a low-confidence estimate.
+    private String buildFundamentalsJson(Stock stock, FundamentalsSnapshot f) {
         if (f == null) {
             return NO_DATA;
         }
@@ -610,6 +648,42 @@ public class OpenRouterAiClient implements AiClient {
     private double round(double value, int decimals) {
         double factor = Math.pow(10, decimals);
         return Math.round(value * factor) / factor;
+    }
+
+    // Enforce the law-of-large-numbers ceiling on the forecast bucket: no company has 5x'd from a
+    // >$1T base in 7 years. Clamps deterministically when the model overshoots a mega-cap's size.
+    private ThesisAiResponse clampForecastToSize(ThesisAiResponse r, FundamentalsSnapshot f) {
+        log.debug("[OpenRouter] clampForecastToSize: bucket={}, marketCap={}",
+                r == null ? null : r.returnMultiple(), f == null ? null : f.marketCap());
+        if (r == null || f == null || f.marketCap() == null
+                || r.returnMultiple() == null || r.returnMultiple().isBlank()) {
+            return r;
+        }
+        int proposed = RETURN_BUCKETS.indexOf(r.returnMultiple().trim());
+        if (proposed < 0) {
+            return r; // unrecognized label; leave the model's value alone
+        }
+        int ceiling = sizeCeilingIndex(f.marketCap());
+        if (proposed <= ceiling) {
+            return r; // already within reality for this size
+        }
+        String capped = RETURN_BUCKETS.get(ceiling);
+        String note = "Size-capped to " + capped + " (market cap $" + round(f.marketCap() / 1e12, 2)
+                + "T; companies this large rarely exceed it over 7 years).";
+        String basis = r.returnBasis() == null || r.returnBasis().isBlank() ? note : r.returnBasis() + "\n" + note;
+        log.debug("[OpenRouter] Forecast {} -> {} by size cap (marketCap={})", r.returnMultiple(), capped, f.marketCap());
+        return new ThesisAiResponse(
+                r.fullBuyThesis(), r.savedBuyThesisSummary(), r.finalRating(), r.conviction(), r.portfolioRole(),
+                r.coreThesis(), r.businessEssence(), r.growthDrivers(), r.moatSummary(), r.financialQuality(),
+                r.valuationView(), r.mainRisks(), r.thesisBreakTriggers(), r.dailyReviewFocus(),
+                capped, basis);
+    }
+
+    private int sizeCeilingIndex(double marketCap) {
+        if (marketCap > 3e12) return 0;     // > $3T  -> "2x"
+        if (marketCap > 1e12) return 1;     // $1-3T  -> "3-5x"
+        if (marketCap > 250e9) return 2;    // $250B-1T -> "5-10x"
+        return 3;                            // < $250B -> "10x+"
     }
 
     private String buildCompactThesisUserPrompt(Stock stock, String fundamentalsJson) {
@@ -818,14 +892,30 @@ public class OpenRouterAiClient implements AiClient {
             @JsonProperty("response_format") ResponseFormat responseFormat,
             Double temperature,
             @JsonProperty("max_tokens") Integer maxTokens,
-            ReasoningConfig reasoning
+            ReasoningConfig reasoning,
+            ProviderConfig provider
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record ReasoningConfig(String effort, Boolean exclude) {}
 
+    // response_format: either {"type":"json_object"} or strict structured outputs
+    // {"type":"json_schema","json_schema":{...}}. json_schema is omitted for json_object.
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record ResponseFormat(String type) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record ResponseFormat(String type, @JsonProperty("json_schema") JsonSchemaSpec jsonSchema) {
+        ResponseFormat(String type) {
+            this(type, null);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record JsonSchemaSpec(String name, Boolean strict, JsonNode schema) {}
+
+    // Forces OpenRouter to only route to providers that honor the request's parameters
+    // (e.g. structured outputs), so an unsupported model errors loudly instead of degrading.
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ProviderConfig(@JsonProperty("require_parameters") Boolean requireParameters) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record RequestMessage(String role, String content) {}

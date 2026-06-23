@@ -1,6 +1,8 @@
 package com.thesisguard.openbb;
 
 import com.thesisguard.common.exception.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -12,6 +14,8 @@ import java.util.Map;
 
 @Component
 public class OpenBbClient {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenBbClient.class);
 
     private static final Map<String, String> EXCHANGE_CODE_MAP = Map.of(
             "NMS", "NASDAQ",
@@ -27,10 +31,12 @@ public class OpenBbClient {
 
     private final RestClient restClient;
 
-    public OpenBbClient(OpenBbProperties properties) {
-        this.restClient = RestClient.builder()
-                .baseUrl(properties.baseUrl())
-                .build();
+    public OpenBbClient(OpenBbProperties properties, RestClient.Builder builder) {
+        RestClient.Builder configured = builder.baseUrl(properties.baseUrl());
+        if (properties.apiKey() != null && !properties.apiKey().isBlank()) {
+            configured = configured.defaultHeader("x-api-key", properties.apiKey());
+        }
+        this.restClient = configured.build();
     }
 
     public OpenBbEquityProfile fetchProfile(String symbol) {
@@ -50,6 +56,11 @@ public class OpenBbClient {
             String exchange = raw.stockExchange() == null || raw.stockExchange().isBlank() ? null
                     : EXCHANGE_CODE_MAP.getOrDefault(raw.stockExchange().toUpperCase(), raw.stockExchange().toUpperCase());
             return new OpenBbEquityProfile(raw.symbol(), exchange, raw.sector(), raw.industryCategory());
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 401) {
+                log.warn("OpenBB authentication failed (401) on profile fetch — check openbb.api-key");
+            }
+            return null;
         } catch (Exception ex) {
             return null;
         }
@@ -95,6 +106,11 @@ public class OpenBbClient {
                 return null;
             }
             return response.results().get(0);
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 401) {
+                log.warn("OpenBB authentication failed (401) on metrics fetch — check openbb.api-key");
+            }
+            return null;
         } catch (Exception ex) {
             return null;
         }
@@ -115,6 +131,11 @@ public class OpenBbClient {
                 return List.of();
             }
             return response.results();
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 401) {
+                log.warn("OpenBB authentication failed (401) on income fetch — check openbb.api-key");
+            }
+            return List.of();
         } catch (Exception ex) {
             return List.of();
         }
@@ -138,7 +159,7 @@ public class OpenBbClient {
         } catch (ApiException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to search equities from OpenBB: " + ex.getMessage());
+            throw mapUpstream("search equities", ex);
         }
     }
 
@@ -169,7 +190,7 @@ public class OpenBbClient {
         } catch (ApiException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to fetch news from OpenBB: " + ex.getMessage());
+            throw mapUpstream("fetch news", ex);
         }
     }
 
@@ -192,7 +213,7 @@ public class OpenBbClient {
         } catch (ApiException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to fetch SEC filings from OpenBB: " + ex.getMessage());
+            throw mapUpstream("fetch SEC filings", ex);
         }
     }
 
@@ -222,6 +243,10 @@ public class OpenBbClient {
         } catch (ApiException ex) {
             throw ex;
         } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 401) {
+                log.warn("OpenBB authentication failed (401) while trying to fetch insider trading — check openbb.api-key");
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "OpenBB authentication failed — check openbb.api-key");
+            }
             // OpenBB's SEC provider answers 400 "No Form 4 data was returned for X."
             // when the date range simply has no transactions — that is an empty
             // result, not an upstream failure.
@@ -231,7 +256,15 @@ public class OpenBbClient {
             }
             throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to fetch insider trading from OpenBB: " + ex.getMessage());
         } catch (Exception ex) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "Failed to fetch insider trading from OpenBB: " + ex.getMessage());
+            throw mapUpstream("fetch insider trading", ex);
         }
+    }
+
+    private ApiException mapUpstream(String action, Exception ex) {
+        if (ex instanceof RestClientResponseException rce && rce.getStatusCode().value() == 401) {
+            log.warn("OpenBB authentication failed (401) while trying to {} — check openbb.api-key", action);
+            return new ApiException(HttpStatus.BAD_GATEWAY, "OpenBB authentication failed — check openbb.api-key");
+        }
+        return new ApiException(HttpStatus.BAD_GATEWAY, "Failed to " + action + " from OpenBB: " + ex.getMessage());
     }
 }
