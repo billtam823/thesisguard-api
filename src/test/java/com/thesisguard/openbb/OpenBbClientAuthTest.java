@@ -45,4 +45,18 @@ class OpenBbClientAuthTest {
         client.fetchProfile("NVDA");
         server.verify();
     }
+
+    @Test
+    void omitsApiKeyHeaderWhenBlank() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        OpenBbClient client = new OpenBbClient(new OpenBbProperties("http://openbb.test", "  "), builder);
+
+        server.expect(requestTo(startsWith("http://openbb.test/api/v1/equity/profile")))
+                .andExpect(headerDoesNotExist("x-api-key"))
+                .andRespond(withSuccess(PROFILE_JSON, MediaType.APPLICATION_JSON));
+
+        client.fetchProfile("NVDA");
+        server.verify();
+    }
 }
