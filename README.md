@@ -276,6 +276,48 @@ docker compose up -d
 npm run dev
 ```
 
+## Deploy to Dokploy
+
+The app ships a multi-stage `Dockerfile` (builds the jar, runs it on port `8080`). Neither
+`application-local.yaml` nor `.env` is baked into the image (both are in `.dockerignore`), so **all
+config comes from environment variables** — Spring Boot relaxed binding maps `A_B_C` → `a.b.c`
+(and accepts `_` in place of `-`, so `OPENBB_BASE_URL` → `openbb.base-url`).
+
+Topology: one Dokploy project with a managed **PostgreSQL** service and an **Application** built
+from this repo's Dockerfile. OpenBB stays self-hosted externally; OpenRouter and Seeking Alpha are
+external APIs (keys only).
+
+### Environment variables (set in the Application's env settings)
+
+| Env var | Value |
+|---|---|
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://<dokploy-db-internal-host>:5432/thesisguard` |
+| `SPRING_DATASOURCE_USERNAME` | `thesisguard_app` |
+| `SPRING_DATASOURCE_PASSWORD` | the password set on the Dokploy Postgres service |
+| `OPENROUTER_API_KEY` | OpenRouter key (enables `OpenRouterAiClient`; without it, `MockAiClient` is used) |
+| `SEEKINGALPHA_API_KEY` | RapidAPI key (without it, company-news fetches return empty) |
+| `OPENBB_BASE_URL` | your self-hosted OpenBB instance, e.g. `https://openbb.kingheung.com` |
+| `OPENBB_API_KEY` | OpenBB client key (matches an entry in the server's `OPENBB_API_KEYS`) |
+
+The free-model defaults (`google/gemini-2.0-flash-exp:free`) are committed in `application.yaml`, so
+no `OPENROUTER_MODEL*` vars are needed for the demo. For production, override `OPENROUTER_MODEL`,
+`OPENROUTER_REVIEW_MODEL`, and `OPENROUTER_TRIAGE_MODEL`.
+
+### Steps
+
+1. Create a project (e.g. `thesisguard`).
+2. Create a **PostgreSQL** service: db `thesisguard`, user `thesisguard_app`, a strong password.
+   Deploy it, then copy its **internal host**.
+3. Create an **Application**: Git provider = this repo, branch = your deploy branch,
+   Build Type = **Dockerfile**.
+4. Add the environment variables above (DB internal host + password, plus the API keys).
+5. Set the container **port** to `8080`; optionally attach a domain.
+6. Set the **Health Check** to HTTP `GET /actuator/health` on port `8080`.
+7. **Deploy.** Watch the build logs; once up, `GET /actuator/health` returns `{"status":"UP"}`.
+
+Schema is created automatically on first boot (Hibernate `ddl-auto: update`) against the empty
+Dokploy database — no migration files.
+
 ## Example Curl Flow
 
 ```bash

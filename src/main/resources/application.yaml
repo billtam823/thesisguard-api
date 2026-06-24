@@ -21,6 +21,18 @@ logging:
     com.thesisguard.ai: DEBUG
     com.thesisguard.thesis: DEBUG
 
+management:
+  # Health endpoint for Dokploy probes: GET /actuator/health (+ liveness/readiness groups).
+  # Only `health` is exposed — no other actuator endpoints are public.
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
 openbb:
   # Point this at YOUR OWN self-hosted OpenBB Platform instance. Override base-url (and the
   # api-key) in application-local.yaml (gitignored) so your instance URL stays out of the repo.
