@@ -63,19 +63,19 @@ finnhub:
   # the codebase as a fallback; put a key here + re-wire NewsItemService to use it again.
 
 openrouter:
-  # FREE-MODEL config (for the Dokploy demo — $0 LLM cost).
-  # Thesis model MUST support structured outputs (json_schema); google/gemini-2.0-flash-exp:free
-  # does (Google honors response_format=json_schema). Review/triage only need plain JSON, so any
-  # free model works. Free models are rate-limited (~50 req/day on OpenRouter) — fine for a demo.
-  # For production, swap back to a paid structured-outputs model (e.g. google/gemini-3.5-flash) —
-  # ideally via env vars (OPENROUTER_MODEL, OPENROUTER_REVIEW_MODEL, OPENROUTER_TRIAGE_MODEL) so
-  # this file stays demo-ready. Browse current free models at openrouter.ai/models?max_price=0.
-  model: google/gemini-2.0-flash-exp:free
-  review-model: google/gemini-2.0-flash-exp:free
+  # The thesis call sends a json_schema (structured outputs) AND a reasoning param with
+  # require_parameters=true, so the model MUST support BOTH. The old free default
+  # (google/gemini-2.0-flash-exp:free) did, but was pulled ("No endpoints found"), and no current
+  # FREE model supports both structured outputs and reasoning. deepseek/deepseek-v4-flash supports
+  # both and is the cheapest such option (~$0.09 per 1M input tokens — a fraction of a cent per call).
+  # Override per environment via env vars (OPENROUTER_MODEL, OPENROUTER_REVIEW_MODEL,
+  # OPENROUTER_TRIAGE_MODEL). Models: openrouter.ai/models.
+  model: deepseek/deepseek-v4-flash
+  review-model: deepseek/deepseek-v4-flash
   # Cheap model for the news triage pre-filter (material vs noise). Defaults to review-model when unset.
-  triage-model: google/gemini-2.0-flash-exp:free
+  triage-model: deepseek/deepseek-v4-flash
   # Model used for the AI web-search news collector (disabled by default, so unused in the demo).
-  news-search-model: google/gemini-2.0-flash-exp:free
+  news-search-model: deepseek/deepseek-v4-flash
   # api-key lives in application-local.yaml (gitignored).
   # When api-key is set, OpenRouterAiClient is used. Otherwise MockAiClient is used.
 
