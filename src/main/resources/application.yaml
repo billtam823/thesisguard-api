@@ -11,15 +11,15 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    # SQL echo off (set true locally to see generated SQL).
+    show-sql: false
 
 logging:
   level:
     com.thesisguard.ai: DEBUG
     com.thesisguard.thesis: DEBUG
+    # Quiet Hibernate: no SQL echo, no startup chatter (HHH00... INFO lines). Warnings/errors still show.
+    org.hibernate: WARN
 
 management:
   # Health endpoint for Dokploy probes: GET /actuator/health (+ liveness/readiness groups).
