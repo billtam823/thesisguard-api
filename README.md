@@ -79,6 +79,34 @@ All stock-scoped endpoints take `{stockCode}`, which resolves as either a numeri
 
 The triage step is a cheap first pass: it classifies each pending news item as **material** (could affect the long-term thesis) or **noise**, so the expensive doctrine review only runs on — and only reads — the material items. Triage fails safe: if it cannot run, every item is treated as material. Disable it with `thesisguard.triage.enabled: false` to review every item.
 
+## Model Configuration
+
+The three OpenRouter models are set under `openrouter:` in `application.yaml`, or — preferably for deployments — overridden via environment variables:
+
+| Property | Env var | Used for |
+| --- | --- | --- |
+| `openrouter.model` | `OPENROUTER_MODEL` | Buy-thesis generation |
+| `openrouter.review-model` | `OPENROUTER_REVIEW_MODEL` | Daily doctrine review |
+| `openrouter.triage-model` | `OPENROUTER_TRIAGE_MODEL` | News triage pre-filter (defaults to review-model) |
+
+**The thesis model has a hard requirement.** The thesis call sends a strict `json_schema` (structured outputs) **and** a `reasoning` parameter with `require_parameters: true`, so OpenRouter only routes to a model that supports **both** `structured_outputs` and `reasoning`. The review/triage calls send `json_object` (plain JSON), which most models support, so those are more flexible.
+
+Before switching the thesis model, confirm the candidate supports both — browse [openrouter.ai/models](https://openrouter.ai/models), or check the model's endpoints:
+
+```bash
+curl https://openrouter.ai/api/v1/models/<author>/<slug>/endpoints
+# supported_parameters must include: structured_outputs, response_format, reasoning, include_reasoning
+```
+
+### Suggested models (structured outputs + reasoning)
+
+| Model | ~Input cost / 1M tokens | Notes |
+| --- | --- | --- |
+| `deepseek/deepseek-v4-flash` | ~$0.09 | Cheapest that qualifies; current default |
+| `google/gemini-3.1-flash-lite` | ~$0.25 | Google-stable alternative |
+
+**On free models:** no current free model supports both structured outputs *and* reasoning, so a $0 thesis model isn't possible without relaxing the code — and free models rotate out without notice (the former default `google/gemini-2.0-flash-exp:free` was pulled, which is what made the default a cheap paid model). Review/triage can still point at a free model if one is available, since they only need plain JSON. Browse free options at [openrouter.ai/models?max_price=0](https://openrouter.ai/models?max_price=0).
+
 ## News & OpenBB Integration
 
 **Company news comes from Seeking Alpha via RapidAPI.** `SeekingAlphaClient` calls `GET /v1/symbols/news` on `seeking-alpha-finance.p.rapidapi.com` (header auth via `x-rapidapi-key`), mapping the JSON:API response into `FetchedNewsItemResponse`. It needs `seekingalpha.api-key` (a RapidAPI key); without a key, company-news fetches return empty (SEC filings/insider still work). An optional AI web-search collector (`AiNewsSearchClient`) can supplement it but is disabled by default (`thesisguard.ai-news-search.enabled`). `NewsfilterClient`, `FinnhubClient`, and `OpenBbClient.fetchCompanyNews` (yfinance) remain in the codebase as unwired fallbacks.
@@ -179,6 +207,8 @@ All relationships are lazy; cascades (`ALL` + orphan removal) flow parent → ch
 Errors return through `@RestControllerAdvice`: missing stock/thesis/review → `404`; duplicate ticker or validation failure → `400` (with `field_errors`); OpenBB upstream failure → `502`; unexpected → `500`.
 
 ## Frontend (thesisguard-app)
+
+Separate repo: https://github.com/billtam823/thesisguard-app
 
 Talks to the API via `VITE_API_BASE_URL` (`.env`, default `http://localhost:8080`). Pages:
 
