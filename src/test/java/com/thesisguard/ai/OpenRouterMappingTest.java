@@ -1,6 +1,8 @@
 package com.thesisguard.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.thesisguard.review.ReviewAiResponse;
+import com.thesisguard.review.ThesisChangeLevel;
 import com.thesisguard.thesis.ThesisAiResponse;
 import org.junit.jupiter.api.Test;
 
@@ -54,5 +56,34 @@ class OpenRouterMappingTest {
         assertThat(r.returnMultiple()).isEqualTo("3-5x");
         assertThat(r.returnBasis()).contains("terminal P/S 12x");
         assertThat(r.fullBuyThesis()).contains("Paragraph two.");
+    }
+
+    @Test
+    void mapsFlatReviewJsonToEveryField() {
+        String json = """
+            {
+              "change_level": "MAJOR",
+              "news_summary": "Regulator opened a formal probe into the data unit.",
+              "thesis_impact": "Probe touches a moat pillar; needs human re-evaluation.",
+              "recommended_actions": ["Reduce on strength", "Track probe scope weekly"],
+              "item_analyses": [
+                {"news_item_id": "11", "item_change_level": "MAJOR", "analysis": "Formal probe, confirmed."},
+                {"news_item_id": "12", "item_change_level": "NOISE", "analysis": "Routine analyst downgrade."}
+              ],
+              "updated_memory": "2026-06-25: probe opened (K2 governance watch)."
+            }
+            """;
+
+        ReviewAiResponse r = client.mapReviewResponse(json);
+
+        assertThat(r.thesisChangeLevel()).isEqualTo(ThesisChangeLevel.Material_Change);
+        assertThat(r.summary()).contains("formal probe");
+        assertThat(r.thesisImpact()).contains("re-evaluation");
+        assertThat(r.recommendedAction()).isEqualTo("Reduce on strength\nTrack probe scope weekly");
+        assertThat(r.newsAnalysis()).hasSize(2);
+        assertThat(r.newsAnalysis().get(0).newsItemId()).isEqualTo("11");
+        assertThat(r.newsAnalysis().get(0).impactLevel()).isEqualTo("MAJOR");
+        assertThat(r.newsAnalysis().get(1).analysis()).contains("downgrade");
+        assertThat(r.updatedMemory()).contains("probe opened");
     }
 }
