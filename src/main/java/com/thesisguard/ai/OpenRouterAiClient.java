@@ -45,11 +45,6 @@ public class OpenRouterAiClient implements AiClient {
     private static final Logger log = LoggerFactory.getLogger(OpenRouterAiClient.class);
     private static final String BASE_URL = "https://openrouter.ai/api/v1";
     private static final String NO_DATA = "(none)";
-    private static final String COMPACT_REVIEW_SYSTEM_PROMPT = """
-            You are a conservative investment thesis news reviewer.
-            Default to NOISE unless news clearly matches a thesis-breaking trigger.
-            Return only the requested minified JSON.
-            """;
     private static final Pattern CODE_BLOCK = Pattern.compile("(?s)```[a-zA-Z]*\\n?(\\{.*?\\})\\n?```");
     // Ordered weakest -> strongest; index used to clamp the forecast to a size-based ceiling.
     private static final List<String> RETURN_BUCKETS = List.of("2x", "3-5x", "5-10x", "10x+");
@@ -65,6 +60,7 @@ public class OpenRouterAiClient implements AiClient {
     private final ResponseFormat buyThesisResponseFormat;
     private final String dailyReviewSystemPrompt;
     private final String dailyReviewUserTemplate;
+    private final ResponseFormat reviewResponseFormat;
     private final String newsTriageSystemPrompt;
     private final String newsTriageUserTemplate;
 
@@ -85,32 +81,33 @@ public class OpenRouterAiClient implements AiClient {
         this.buyThesisResponseFormat = loadThesisResponseFormat();
         this.dailyReviewSystemPrompt = loadPrompt("prompts/daily_review_system_prompt.txt");
         this.dailyReviewUserTemplate = loadPrompt("prompts/daily_review_user_template.txt");
+        this.reviewResponseFormat = loadReviewResponseFormat();
         this.newsTriageSystemPrompt = loadPrompt("prompts/news_triage_system_prompt.txt");
         this.newsTriageUserTemplate = loadPrompt("prompts/news_triage_user_template.txt");
     }
 
     @Override
     public ThesisAiResponse generateBuyThesis(Stock stock) {
-        // Fetch real fundamentals once and feed both the full and compact prompts so the growth
-        // forecast survives the (frequent) truncation fallback on weaker models.
+        // Fetch real fundamentals once so the growth forecast and size cap use live numbers.
         FundamentalsSnapshot fundamentals = fetchFundamentalsSafe(stock);
         String fundamentalsJson = buildFundamentalsJson(stock, fundamentals);
         ThesisAiResponse response;
         try {
-            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 12000, buyThesisResponseFormat);
+            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt,
+                    buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 6000, buyThesisResponseFormat);
             response = mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
-            log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
+            log.debug("[OpenRouter] Thesis JSON truncated; retrying once with a larger completion budget");
             try {
-                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 8000);
-                response = mapCompactThesisResponse(compactJson, stock);
-            } catch (TruncatedJsonException compactEx) {
+                String retryJson = callOpenRouter(thesisModel, buyThesisSystemPrompt,
+                        buildThesisUserPrompt(stock, fundamentalsJson), 0.2, 12000, buyThesisResponseFormat);
+                response = mapThesisResponse(retryJson);
+            } catch (TruncatedJsonException retryEx) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY,
-                        "OpenRouter model output was truncated even with the compact fallback schema. Switch to a model with a larger completion limit.");
+                        "OpenRouter model output was truncated even at 12,000 tokens. Switch to a model with a larger completion limit.");
             }
         }
-        // Weak models routinely ignore the prompt's size cap, so enforce the law-of-large-numbers
-        // ceiling deterministically against the real market cap. The model proposes; code clamps.
+        // The model proposes the forecast bucket; code clamps it to the law-of-large-numbers ceiling.
         return clampForecastToSize(response, fundamentals);
     }
 
@@ -182,19 +179,21 @@ public class OpenRouterAiClient implements AiClient {
     @Override
     public ReviewAiResponse reviewNews(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
         try {
-            String json = callOpenRouter(reviewModel, dailyReviewSystemPrompt, buildReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.1, reviewMaxTokens(newsItems.size()));
+            String json = callOpenRouter(reviewModel, dailyReviewSystemPrompt,
+                    buildReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.1,
+                    reviewMaxTokens(newsItems.size()), reviewResponseFormat);
             return mapReviewResponse(json);
         } catch (TruncatedJsonException ex) {
-            log.debug("[OpenRouter] Review JSON was truncated; retrying with compact fallback schema");
+            log.debug("[OpenRouter] Review JSON truncated; retrying once before falling back");
             try {
-                String compactJson = callOpenRouter(reviewModel, COMPACT_REVIEW_SYSTEM_PROMPT, buildCompactReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.0, 6000);
-                return mapCompactReviewResponse(compactJson);
-            } catch (TruncatedJsonException compactEx) {
-                log.debug("[OpenRouter] Compact review fallback was also truncated; using local conservative fallback");
-                return localReviewFallback(stock, newsItems, "OpenRouter output was truncated before valid JSON completed.");
-            } catch (EmptyMessageContentException compactEx) {
-                log.debug("[OpenRouter] Compact review fallback returned empty content; using local conservative fallback");
-                return localReviewFallback(stock, newsItems, "OpenRouter returned empty content.");
+                String retry = callOpenRouter(reviewModel, dailyReviewSystemPrompt,
+                        buildReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.0,
+                        Math.min(20000, reviewMaxTokens(newsItems.size()) * 2), reviewResponseFormat);
+                return mapReviewResponse(retry);
+            } catch (TruncatedJsonException retryEx) {
+                log.debug("[OpenRouter] Review retry also truncated; using local conservative fallback");
+                return localReviewFallback(stock, newsItems,
+                        "OpenRouter output was truncated before valid JSON completed.");
             }
         }
     }
@@ -342,6 +341,15 @@ public class OpenRouterAiClient implements AiClient {
         }
     }
 
+    private ResponseFormat loadReviewResponseFormat() {
+        try {
+            JsonNode schema = objectMapper.readTree(loadPrompt("prompts/review_schema.json"));
+            return new ResponseFormat("json_schema", new JsonSchemaSpec("daily_review", true, schema));
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load daily-review JSON schema", ex);
+        }
+    }
+
     private String extractText(OpenRouterResponse response) {
         Choice choice = response.choices().get(0);
         if (choice.message() == null) {
@@ -429,141 +437,43 @@ public class OpenRouterAiClient implements AiClient {
         return value == null || value.isBlank() ? "" : ": " + value;
     }
 
-    private ThesisAiResponse mapThesisResponse(String json) {
+    ThesisAiResponse mapThesisResponse(String json) {
         JsonNode root = parseTree(json);
-        JsonNode firstPrinciples = root.path("firstPrinciples");
-        JsonNode trend = root.path("trend");
-        JsonNode fiveCriteria = root.path("fiveCriteria");
-        JsonNode positionGuidance = root.path("positionGuidance");
-
         return new ThesisAiResponse(
-                pretty(root),
-                text(root, "thesisSummary"),
-                text(root, "verdict"),
-                convictionFromScore(root.path("convictionScore").asInt(0)),
-                text(root, "companyType"),
-                text(root, "thesisSummary"),
-                joinNonBlank(
-                        "Industry: " + text(firstPrinciples, "trueIndustry"),
-                        "Winning rules: " + text(firstPrinciples, "industryWinningRules"),
-                        "Core advantage: " + text(firstPrinciples, "coreAdvantage"),
-                        "Direction: " + text(firstPrinciples, "coreAdvantageDirection")
-                ),
-                joinNonBlank(
-                        "Mega-trend: " + text(trend, "megaTrend"),
-                        "Trend stage: " + text(trend, "stage"),
-                        "Stage rationale: " + text(trend, "stageRationale"),
-                        "Market size: " + text(fiveCriteria.path("marketSize"), "evidence")
-                ),
-                joinNonBlank(
-                        "Score: " + fiveCriteria.path("moat").path("score").asText("0"),
-                        "Types: " + joinArray(fiveCriteria.path("moat").path("moatTypes")),
-                        "Depth: " + text(fiveCriteria.path("moat"), "moatDepth")
-                ),
-                joinNonBlank(
-                        "Rapid growth: " + text(fiveCriteria.path("rapidGrowth"), "evidence"),
-                        "Rule of 40: " + fiveCriteria.path("rapidGrowth").path("ruleOf40Value").asText("0"),
-                        "Cash flow: " + text(fiveCriteria.path("cashFlow"), "evidence")
-                ),
-                joinNonBlank(
-                        "Entry strategy: " + text(positionGuidance, "entryStrategy"),
-                        "Max portfolio percent: " + positionGuidance.path("maxPortfolioPercent").asText("0"),
-                        "Return target: " + text(positionGuidance, "returnTarget")
-                ),
-                joinNonBlank(
-                        "Paradigm shift threat: " + text(firstPrinciples.path("paradigmShiftRisk"), "threat"),
-                        "Probability: " + text(firstPrinciples.path("paradigmShiftRisk"), "probability"),
-                        "Failed gates: " + joinArray(root.path("exclusionGates").path("failedGates"))
-                ),
-                joinArray(root.path("killCriteria")),
-                joinArray(root.path("watchItems")),
-                text(root.path("growthForecast"), "returnMultiple"),
-                buildReturnBasis(root.path("growthForecast"))
+                text(root, "full_buy_thesis"),
+                text(root, "saved_buy_thesis_summary"),
+                text(root, "final_rating"),
+                text(root, "conviction"),
+                text(root, "portfolio_role"),
+                text(root, "core_thesis"),
+                text(root, "business_essence"),
+                text(root, "growth_drivers"),
+                text(root, "moat_summary"),
+                text(root, "financial_quality"),
+                text(root, "valuation_view"),
+                text(root, "main_risks"),
+                joinArray(root.path("thesis_break_triggers")),
+                joinArray(root.path("daily_review_focus")),
+                text(root, "return_multiple"),
+                text(root, "return_basis")
         );
     }
 
-    // Flatten the growthForecast node into a single human-readable line for the UI panel.
-    private String buildReturnBasis(JsonNode gf) {
-        if (gf == null || gf.isMissingNode() || gf.isNull()) {
-            return null;
-        }
-        String basis = joinNonBlank(
-                "CAGR: " + text(gf, "revenueCagr"),
-                text(gf, "terminalMultipleAssumption"),
-                text(gf, "basis"),
-                "Bear: " + text(gf, "bearCase"),
-                "Bull: " + text(gf, "bullCase"),
-                "Confidence: " + text(gf, "confidence")
-        );
-        return basis.isBlank() ? null : basis;
-    }
-
-    private ThesisAiResponse mapCompactThesisResponse(String json, Stock stock) {
-        JsonNode root = parseTree(json);
-        String verdict = text(root, "verdict");
-        int convictionScore = root.path("convictionScore").asInt(0);
-        String thesisSummary = text(root, "thesisSummary");
-        String killCriteria = joinArray(root.path("killCriteria"));
-        String watchItems = joinArray(root.path("watchItems"));
-        String risks = joinArray(root.path("risks"));
-
-        return new ThesisAiResponse(
-                pretty(root),
-                thesisSummary,
-                verdict,
-                convictionFromScore(convictionScore),
-                text(root, "companyType"),
-                thesisSummary,
-                "Core advantage: " + text(root, "coreAdvantage") + "\nDirection: " + text(root, "coreAdvantageDirection"),
-                text(root, "trend"),
-                text(root, "moat"),
-                text(root, "financialQuality"),
-                text(root, "valuationView"),
-                risks,
-                killCriteria,
-                watchItems.isBlank() ? "Monitor quarterly fundamentals, moat signals, valuation, and thesis-breaking events for " + stock.getTicker() + "." : watchItems,
-                text(root.path("growthForecast"), "returnMultiple"),
-                buildReturnBasis(root.path("growthForecast"))
-        );
-    }
-
-    private ReviewAiResponse mapReviewResponse(String json) {
+    ReviewAiResponse mapReviewResponse(String json) {
         JsonNode root = parseTree(json);
         List<ReviewNewsAnalysisAiResponse> newsAnalysis = new ArrayList<>();
-        root.path("itemAnalyses").forEach(item -> newsAnalysis.add(new ReviewNewsAnalysisAiResponse(
-                text(item, "newsItemId"),
+        root.path("item_analyses").forEach(item -> newsAnalysis.add(new ReviewNewsAnalysisAiResponse(
+                text(item, "news_item_id"),
                 text(item, "analysis"),
-                text(item, "itemChangeLevel")
+                text(item, "item_change_level")
         )));
-
-        String thesisImpact = text(root, "thesisImpactSummary");
-        String newsSummary = text(root, "newsSummary");
         return new ReviewAiResponse(
-                mapChangeLevel(text(root, "changeLevel")),
-                newsSummary.isBlank() ? thesisImpact : newsSummary,
-                thesisImpact,
-                joinArray(root.path("recommendedActions")),
+                mapChangeLevel(text(root, "change_level")),
+                text(root, "news_summary"),
+                text(root, "thesis_impact"),
+                joinArray(root.path("recommended_actions")),
                 newsAnalysis,
-                text(root, "updatedMemory")
-        );
-    }
-
-    private ReviewAiResponse mapCompactReviewResponse(String json) {
-        JsonNode root = parseTree(json);
-        List<ReviewNewsAnalysisAiResponse> newsAnalysis = new ArrayList<>();
-        root.path("items").forEach(item -> newsAnalysis.add(new ReviewNewsAnalysisAiResponse(
-                text(item, "id"),
-                text(item, "analysis"),
-                text(item, "level")
-        )));
-
-        return new ReviewAiResponse(
-                mapChangeLevel(text(root, "changeLevel")),
-                text(root, "summary"),
-                text(root, "impact"),
-                text(root, "action"),
-                newsAnalysis,
-                text(root, "updatedMemory")
+                text(root, "updated_memory")
         );
     }
 
@@ -686,21 +596,6 @@ public class OpenRouterAiClient implements AiClient {
         return 3;                            // < $250B -> "10x+"
     }
 
-    private String buildCompactThesisUserPrompt(Stock stock, String fundamentalsJson) {
-        return """
-                Generate a compact long-term buy thesis for this stock using the system doctrine.
-                Ticker: %s
-                Company: %s
-                Fundamentals (may be "(none)"): %s
-
-                Return ONLY minified JSON. No markdown. Every string under 90 characters.
-                For growthForecast follow Stage 6: returnMultiple = growthFactor(CAGR) x (terminalP/S / currentP/S).
-                If fundamentals provide currentPriceToSales you MUST use it and set confidence HIGH; else estimate and set MEDIUM/LOW.
-                Required schema:
-                {"verdict":"GREEN|YELLOW|RED","convictionScore":0,"companyType":"TECH_INNOVATOR|BUSINESS_MODEL_INNOVATOR|BRAND|ECOSYSTEM","trend":"string","coreAdvantage":"string","coreAdvantageDirection":"STRENGTHENING|STABLE|WEAKENING","moat":"string","financialQuality":"string","valuationView":"string","thesisSummary":"string","killCriteria":["string","string","string"],"watchItems":["string","string","string"],"risks":["string","string","string"],"growthForecast":{"returnMultiple":"2x|3-5x|5-10x|10x+","revenueCagr":"string","currentPriceToSales":0,"terminalMultipleAssumption":"string","basis":"string","bearCase":"2x|3-5x|5-10x|10x+","bullCase":"2x|3-5x|5-10x|10x+","confidence":"LOW|MEDIUM|HIGH"}}
-                """.formatted(stock.getTicker(), stock.getCompanyName(), fundamentalsJson);
-    }
-
     private String buildReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
         return fill(dailyReviewUserTemplate,
                 "{{ticker}}", stock.getTicker(),
@@ -710,30 +605,6 @@ public class OpenRouterAiClient implements AiClient {
                 "{{thesisJson}}", buildThesisJson(thesis),
                 "{{monitorMemoryBlock}}", monitorMemory,
                 "{{newsItemsBlock}}", buildNewsItemsBlock(newsItems, REVIEW_SUMMARY_LEN, true));
-    }
-
-    private String buildCompactReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
-        return """
-                Review today's news against this saved long-term thesis.
-                Stock: %s -- %s
-                Status: %s
-                Date: %s
-                Thesis: %s
-                Prior monitoring notes: %s
-                News: %s
-
-                Return ONLY minified JSON. No markdown. Every string under 90 characters, except updatedMemory which may be up to 1200 characters.
-                updatedMemory: rewrite the prior monitoring notes adding only durable new findings; drop noise and resolved items.
-                Schema: {"changeLevel":"NONE|NOISE|MINOR|MAJOR|CRITICAL","summary":"string","impact":"string","action":"string","updatedMemory":"string","items":[{"id":"string","level":"NONE|NOISE|MINOR|MAJOR|CRITICAL","analysis":"string"}]}
-                """.formatted(
-                stock.getTicker(),
-                stock.getCompanyName(),
-                stock.getStatus().getLabel(),
-                LocalDate.now(),
-                buildCompactThesisText(thesis),
-                monitorMemory == null || monitorMemory.isBlank() ? NO_DATA : truncate(monitorMemory, 800),
-                buildCompactNewsText(newsItems)
-        );
     }
 
     // Triage only needs the gist (short snippet, keeps the all-items pass cheap); the expensive
@@ -771,24 +642,6 @@ public class OpenRouterAiClient implements AiClient {
                 + "; summary=" + truncate(thesis.getSavedBuyThesisSummary(), 240)
                 + "; kill=" + truncate(thesis.getThesisBreakTriggers(), 300)
                 + "; watch=" + truncate(thesis.getDailyReviewFocus(), 240);
-    }
-
-    private String buildCompactNewsText(List<NewsItem> newsItems) {
-        StringBuilder news = new StringBuilder();
-        int count = 0;
-        for (NewsItem item : newsItems) {
-            if (count >= 8) {
-                news.append("more_news_omitted");
-                break;
-            }
-            news.append("[%s] %s - %s; ".formatted(
-                    item.getId(),
-                    truncate(item.getTitle(), 120),
-                    truncate(item.getSummary(), 180)
-            ));
-            count++;
-        }
-        return news.toString();
     }
 
     private ArrayNode textArray(String value) {
@@ -843,16 +696,6 @@ public class OpenRouterAiClient implements AiClient {
         return String.join("\n", values);
     }
 
-    private String joinNonBlank(String... values) {
-        List<String> nonBlank = new ArrayList<>();
-        for (String value : values) {
-            if (value != null && !value.isBlank() && !value.endsWith(": ")) {
-                nonBlank.add(value);
-            }
-        }
-        return String.join("\n", nonBlank);
-    }
-
     private String truncate(String value, int maxLength) {
         if (value == null) {
             return "";
@@ -862,16 +705,6 @@ public class OpenRouterAiClient implements AiClient {
             return cleaned;
         }
         return cleaned.substring(0, Math.max(0, maxLength - 3)) + "...";
-    }
-
-    private String convictionFromScore(int score) {
-        if (score >= 70) {
-            return "High";
-        }
-        if (score >= 40) {
-            return "Medium";
-        }
-        return "Low";
     }
 
     private ThesisChangeLevel mapChangeLevel(String changeLevel) {

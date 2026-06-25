@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_level", "news_summary", "thesis_impact", "recommended_actions", "item_analyses", "updated_memory"],
+  "properties": {
+    "change_level": { "type": "string", "enum": ["NONE", "NOISE", "MINOR", "MAJOR", "CRITICAL"] },
+    "news_summary": { "type": "string" },
+    "thesis_impact": { "type": "string" },
+    "recommended_actions": { "type": "array", "items": { "type": "string" } },
+    "item_analyses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["news_item_id", "item_change_level", "analysis"],
+        "properties": {
+          "news_item_id": { "type": "string" },
+          "item_change_level": { "type": "string", "enum": ["NONE", "NOISE", "MINOR", "MAJOR", "CRITICAL"] },
+          "analysis": { "type": "string" }
+        }
+      }
+    },
+    "updated_memory": { "type": "string" }
+  }
+}
