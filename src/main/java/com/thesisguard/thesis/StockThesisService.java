@@ -94,6 +94,7 @@ public class StockThesisService {
         thesis.setDailyReviewFocus(source.dailyReviewFocus());
         thesis.setReturnMultiple(source.returnMultiple());
         thesis.setReturnBasis(source.returnBasis());
+        thesis.setPositionGuidance(source.positionGuidance());
     }
 
     private void apply(StockThesis thesis, StockThesisUpdateRequest source) {

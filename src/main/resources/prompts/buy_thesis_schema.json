@@ -5,12 +5,12 @@
     "final_rating", "conviction", "portfolio_role", "saved_buy_thesis_summary",
     "core_thesis", "business_essence", "growth_drivers", "moat_summary",
     "financial_quality", "valuation_view", "main_risks", "thesis_break_triggers",
-    "daily_review_focus", "return_multiple", "return_basis", "full_buy_thesis"
+    "daily_review_focus", "return_multiple", "return_basis", "full_buy_thesis", "position_guidance"
   ],
   "properties": {
     "final_rating": { "type": "string", "enum": ["GREEN", "YELLOW", "RED"] },
     "conviction": { "type": "string", "enum": ["High", "Medium", "Low"] },
-    "portfolio_role": { "type": "string" },
+    "portfolio_role": { "type": "string", "maxLength": 60 },
     "saved_buy_thesis_summary": { "type": "string" },
     "core_thesis": { "type": "string" },
     "business_essence": { "type": "string" },
@@ -23,6 +23,7 @@
     "daily_review_focus": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 6 },
     "return_multiple": { "type": "string", "enum": ["2x", "3-5x", "5-10x", "10x+"] },
     "return_basis": { "type": "string" },
-    "full_buy_thesis": { "type": "string" }
+    "full_buy_thesis": { "type": "string" },
+    "position_guidance": { "type": "string" }
   }
 }

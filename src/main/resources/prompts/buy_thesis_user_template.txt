@@ -13,7 +13,9 @@ than an empty string. Keep each string concise.
 Field guidance:
 - final_rating: GREEN, YELLOW, or RED per Stage 5. The default is NOT GREEN.
 - conviction: High, Medium, or Low (GREEN typically High, YELLOW Medium, RED Low).
-- portfolio_role: the company type and how it would serve a concentrated growth portfolio.
+- portfolio_role: a SHORT label, max ~50 chars -- the company type plus its role in a few words,
+  e.g. "Tech innovator, core holding" or "Speculative growth, small starter". Never a sentence;
+  position sizing belongs in valuation_view and the summary, not here.
 - saved_buy_thesis_summary: 3-5 plain sentences on why this compounds for 5-7 years.
 - core_thesis: one or two sentences capturing the single central bet.
 - business_essence: what the business really does and the industry it really competes in.
@@ -31,3 +33,6 @@ Field guidance:
 - return_multiple: follow Stage 6 (2x, 3-5x, 5-10x, or 10x+) after applying the size cap.
 - return_basis: one line - CAGR assumption, terminal multiple, bear/bull case, and confidence.
 - full_buy_thesis: a 2-4 paragraph prose narrative tying the above together for a reader.
+- position_guidance: 1-3 sentences of actionable advice -- suggested position size (% of a
+  concentrated portfolio), how to enter/accumulate, and the conditions that would upgrade or
+  downgrade the rating. This is the investment-advice detail that does NOT belong in portfolio_role.
