@@ -188,7 +188,7 @@ public class OpenRouterAiClient implements AiClient {
             try {
                 String retry = callOpenRouter(reviewModel, dailyReviewSystemPrompt,
                         buildReviewUserPrompt(stock, thesis, newsItems, monitorMemory), 0.0,
-                        reviewMaxTokens(newsItems.size()), reviewResponseFormat);
+                        Math.min(20000, reviewMaxTokens(newsItems.size()) * 2), reviewResponseFormat);
                 return mapReviewResponse(retry);
             } catch (TruncatedJsonException retryEx) {
                 log.debug("[OpenRouter] Review retry also truncated; using local conservative fallback");
