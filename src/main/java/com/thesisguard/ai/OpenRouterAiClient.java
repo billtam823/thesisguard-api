@@ -696,16 +696,6 @@ public class OpenRouterAiClient implements AiClient {
         return String.join("\n", values);
     }
 
-    private String joinNonBlank(String... values) {
-        List<String> nonBlank = new ArrayList<>();
-        for (String value : values) {
-            if (value != null && !value.isBlank() && !value.endsWith(": ")) {
-                nonBlank.add(value);
-            }
-        }
-        return String.join("\n", nonBlank);
-    }
-
     private String truncate(String value, int maxLength) {
         if (value == null) {
             return "";
