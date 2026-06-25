@@ -28,6 +28,7 @@ public class Alert {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "daily_news_review_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private DailyNewsReview dailyNewsReview;
 
     @Enumerated(EnumType.STRING)
