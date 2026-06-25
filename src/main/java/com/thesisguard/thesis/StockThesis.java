@@ -75,6 +75,11 @@ public class StockThesis {
     @Column(columnDefinition = "TEXT")
     private String returnBasis;
 
+    // How to own it: suggested position size, accumulation strategy, and upgrade/downgrade
+    // conditions. Nullable so ddl-auto=update can add it to existing tables without a default.
+    @Column(columnDefinition = "TEXT")
+    private String positionGuidance;
+
     // Set to RUNNING while AI is generating asynchronously; DONE on success; FAILED on error.
     @Column(length = 16)
     private String generationStatus;

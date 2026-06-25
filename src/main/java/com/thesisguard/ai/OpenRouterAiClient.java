@@ -455,7 +455,8 @@ public class OpenRouterAiClient implements AiClient {
                 joinArray(root.path("thesis_break_triggers")),
                 joinArray(root.path("daily_review_focus")),
                 text(root, "return_multiple"),
-                text(root, "return_basis")
+                text(root, "return_basis"),
+                text(root, "position_guidance")
         );
     }
 
@@ -586,7 +587,7 @@ public class OpenRouterAiClient implements AiClient {
                 r.fullBuyThesis(), r.savedBuyThesisSummary(), r.finalRating(), r.conviction(), r.portfolioRole(),
                 r.coreThesis(), r.businessEssence(), r.growthDrivers(), r.moatSummary(), r.financialQuality(),
                 r.valuationView(), r.mainRisks(), r.thesisBreakTriggers(), r.dailyReviewFocus(),
-                capped, basis);
+                capped, basis, r.positionGuidance());
     }
 
     private int sizeCeilingIndex(double marketCap) {

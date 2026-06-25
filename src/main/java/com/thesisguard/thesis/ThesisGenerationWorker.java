@@ -74,5 +74,6 @@ public class ThesisGenerationWorker {
         thesis.setDailyReviewFocus(source.dailyReviewFocus());
         thesis.setReturnMultiple(source.returnMultiple());
         thesis.setReturnBasis(source.returnBasis());
+        thesis.setPositionGuidance(source.positionGuidance());
     }
 }

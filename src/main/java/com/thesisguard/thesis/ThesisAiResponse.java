@@ -18,6 +18,7 @@ public record ThesisAiResponse(
         @JsonProperty("thesis_break_triggers") String thesisBreakTriggers,
         @JsonProperty("daily_review_focus") String dailyReviewFocus,
         @JsonProperty("return_multiple") String returnMultiple,
-        @JsonProperty("return_basis") String returnBasis
+        @JsonProperty("return_basis") String returnBasis,
+        @JsonProperty("position_guidance") String positionGuidance
 ) {
 }

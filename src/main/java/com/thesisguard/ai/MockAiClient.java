@@ -63,7 +63,8 @@ public class MockAiClient implements AiClient {
                   "thesis_break_triggers": "Core moat weakening, revenue growth structurally slowing, margin collapse, management credibility issue, bubble-like valuation.",
                   "daily_review_focus": "Demand changes, competitive threats, regulation, management execution, financial quality signals, and thesis-break triggers.",
                   "return_multiple": "5-10x",
-                  "return_basis": "CAGR: 30% (mock)\\nP/S 25x->12x at maturity\\nMock estimate; replace AiClient with a real provider.\\nBear: 3-5x\\nBull: 10x+\\nConfidence: MEDIUM"
+                  "return_basis": "CAGR: 30% (mock)\\nP/S 25x->12x at maturity\\nMock estimate; replace AiClient with a real provider.\\nBear: 3-5x\\nBull: 10x+\\nConfidence: MEDIUM",
+                  "position_guidance": "Small starter position (2-5% of a concentrated portfolio); accumulate on dips; size up only on sustained execution. Mock advice — replace AiClient with a real provider."
                 }
                 """.formatted(stock.getCompanyName(), stock.getTicker());
         return read(json, ThesisAiResponse.class);
