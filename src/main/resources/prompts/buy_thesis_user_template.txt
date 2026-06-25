@@ -13,9 +13,11 @@ than an empty string. Keep each string concise.
 Field guidance:
 - final_rating: GREEN, YELLOW, or RED per Stage 5. The default is NOT GREEN.
 - conviction: High, Medium, or Low (GREEN typically High, YELLOW Medium, RED Low).
-- portfolio_role: a SHORT label, max ~50 chars -- the company type plus its role in a few words,
-  e.g. "Tech innovator, core holding" or "Speculative growth, small starter". Never a sentence;
-  position sizing belongs in valuation_view and the summary, not here.
+- portfolio_role: a SHORT label, max ~55 chars. LEAD with the company's market-cap scale from
+  marketCapUsd (mega-cap > $200B, large-cap $10-200B, mid-cap $2-10B, small-cap < $2B), THEN the
+  company type and its role, e.g. "Mega-cap growth turnaround, small starter" or "Large-cap
+  compounder, core holding". Never a sentence; "starter/core" is the POSITION size, not the company
+  size -- detailed sizing belongs in position_guidance.
 - saved_buy_thesis_summary: 3-5 plain sentences on why this compounds for 5-7 years.
 - core_thesis: one or two sentences capturing the single central bet.
 - business_essence: what the business really does and the industry it really competes in.
