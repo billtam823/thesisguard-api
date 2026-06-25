@@ -101,9 +101,14 @@ public class OpenRouterAiClient implements AiClient {
             response = mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
             log.debug("[OpenRouter] Thesis JSON truncated; retrying once with a larger completion budget");
-            String retryJson = callOpenRouter(thesisModel, buyThesisSystemPrompt,
-                    buildThesisUserPrompt(stock, fundamentalsJson), 0.2, 12000, buyThesisResponseFormat);
-            response = mapThesisResponse(retryJson);
+            try {
+                String retryJson = callOpenRouter(thesisModel, buyThesisSystemPrompt,
+                        buildThesisUserPrompt(stock, fundamentalsJson), 0.2, 12000, buyThesisResponseFormat);
+                response = mapThesisResponse(retryJson);
+            } catch (TruncatedJsonException retryEx) {
+                throw new ApiException(HttpStatus.BAD_GATEWAY,
+                        "OpenRouter model output was truncated even at 12,000 tokens. Switch to a model with a larger completion limit.");
+            }
         }
         // The model proposes the forecast bucket; code clamps it to the law-of-large-numbers ceiling.
         return clampForecastToSize(response, fundamentals);
