@@ -7,6 +7,7 @@ import com.thesisguard.openbb.OpenBbEquityProfile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -56,11 +57,41 @@ public class StockService {
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        return openBbClient.searchEquities(query.trim()).stream()
+        String trimmed = query.trim();
+        List<StockLookupResponse> matches = openBbClient.searchEquities(trimmed).stream()
                 .filter(item -> item.symbol() != null && !item.symbol().isBlank())
                 .map(item -> new StockLookupResponse(item.symbol().toUpperCase(Locale.ROOT), item.name()))
+                .toList();
+        return rankByRelevance(matches, trimmed);
+    }
+
+    // Surface the closest matches first: exact ticker, then ticker prefix, then ticker substring,
+    // then name-only matches; shorter and alphabetically-earlier tickers break ties. The SEC
+    // provider returns hits in alphabetical order (e.g. ABBV before BB for "BB"), so without this
+    // re-rank an exact ticker would not lead the dropdown. Cap to 20 AFTER ranking so an exact
+    // match is never truncated away by a common substring.
+    static List<StockLookupResponse> rankByRelevance(List<StockLookupResponse> matches, String query) {
+        String upperQuery = query.trim().toUpperCase(Locale.ROOT);
+        return matches.stream()
+                .sorted(Comparator.comparingInt((StockLookupResponse m) -> relevanceRank(m.symbol(), upperQuery))
+                        .thenComparingInt(m -> m.symbol().length())
+                        .thenComparing(StockLookupResponse::symbol))
                 .limit(20)
                 .toList();
+    }
+
+    private static int relevanceRank(String symbol, String upperQuery) {
+        String upperSymbol = symbol.toUpperCase(Locale.ROOT);
+        if (upperSymbol.equals(upperQuery)) {
+            return 0;
+        }
+        if (upperSymbol.startsWith(upperQuery)) {
+            return 1;
+        }
+        if (upperSymbol.contains(upperQuery)) {
+            return 2;
+        }
+        return 3; // matched on company name only
     }
 
     @Transactional(readOnly = true)
