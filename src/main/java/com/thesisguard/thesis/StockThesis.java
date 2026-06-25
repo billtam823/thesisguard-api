@@ -37,7 +37,7 @@ public class StockThesis {
     @Column(nullable = false, length = 64)
     private String conviction;
 
-    @Column(nullable = false, length = 128)
+    @Column(columnDefinition = "TEXT", nullable = false)
     private String portfolioRole;
 
     @Column(columnDefinition = "TEXT", nullable = false)
