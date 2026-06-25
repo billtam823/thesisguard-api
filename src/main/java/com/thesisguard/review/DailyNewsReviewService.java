@@ -161,7 +161,7 @@ public class DailyNewsReviewService {
                 .thesisChangeLevel(ThesisChangeLevel.No_News_Found)
                 .summary("No unreviewed news found.")
                 .thesisImpact("No thesis impact because every saved news item has already been reviewed.")
-                .recommendedAction("Continue holding current status; fetch or save fresh news before running another substantive review.")
+                .recommendedAction("Continue holding current status; no action required from today's news.")
                 .build();
     }
 
