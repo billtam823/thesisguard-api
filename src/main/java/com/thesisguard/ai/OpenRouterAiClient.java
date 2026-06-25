@@ -231,7 +231,9 @@ public class OpenRouterAiClient implements AiClient {
                 throw new TruncatedJsonException(
                         "OpenRouter model output was truncated before valid JSON completed.");
             }
-            log.debug("[OpenRouter] Raw response ({} chars):\n{}", text.length(), text);
+            // Don't log the response body — large responses bloat the logs and slow generation.
+            // Length + finish_reason from logResponseSummary are enough to diagnose issues.
+            log.debug("[OpenRouter] Raw response received ({} chars)", text.length());
             return text;
         } catch (ApiException ex) {
             throw ex;
