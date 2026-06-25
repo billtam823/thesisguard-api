@@ -18,50 +18,18 @@ Review date: {{reviewDate}}
 summary
 ---)
 
-Return a JSON object with this EXACT schema (all keys required; use null or empty arrays where not applicable):
+Reason through the K1-K4 doctrine internally, but RETURN ONLY the flat JSON object enforced by
+the schema. All fields are required.
 
-Hard output constraints:
-- Return minified JSON only: no indentation, no line breaks, no markdown.
-- Keep every string value under 160 characters, EXCEPT updatedMemory which may be up to 2000 words.
-- Keep item analysis to one short sentence.
-- Do not include long prose.
-- Inside updatedMemory, escape line breaks as \n.
-
-{
-  "ticker": "string",
-  "reviewDate": "YYYY-MM-DD",
-  "changeLevel": "NONE | NOISE | MINOR | MAJOR | CRITICAL",
-  "coreAdvantageDirection": "STRENGTHENING | STABLE | WEAKENING",
-  "buyOpportunity": false,
-  "buyOpportunityRationale": null,
-  "itemAnalyses": [
-    {
-      "newsItemId": "string",
-      "relevance": "COMPANY | INDUSTRY | MACRO | IRRELEVANT",
-      "classification": "NOISE | K1_MOAT | K2_GOVERNANCE | K3_VALUATION | K4_MACRO",
-      "evidenceQuality": "RUMOR | REPORT | CONFIRMED | AUDITED_FACT",
-      "itemChangeLevel": "NONE | NOISE | MINOR | MAJOR | CRITICAL",
-      "matchedKillCriteria": ["string"],
-      "analysis": "string"
-    }
-  ],
-  "newsSummary": "string",
-  "thesisImpactSummary": "string",
-  "recommendedStatus": "HOLD | MONITOR | REVIEW | REDUCE | EXIT",
-  "recommendedActions": ["string"],
-  "newWatchItems": ["string"],
-  "alertRequired": false,
-  "alertMessage": null,
-  "updatedMemory": "string"
-}
-
-Notes on fields:
-- changeLevel: the MAXIMUM itemChangeLevel across all items.
-- matchedKillCriteria: exact strings copied from the thesis killCriteria array that this item matches; empty array if none.
-- analysis: 1-3 sentences per item.
-- newsSummary: 1-2 sentences summarizing what today's news items reported -- facts only, no thesis judgment. Must not repeat thesisImpactSummary.
-- thesisImpactSummary: 2-4 sentences on the net effect of today's news on the 5-7 year thesis.
-- newWatchItems: items to append to the thesis watch list; empty array if none.
-- alertRequired: true only when changeLevel is MAJOR or CRITICAL, or when buyOpportunity is true and the drop is significant.
-- alertMessage: concise and factual, referencing the specific trigger; null when alertRequired is false.
-- updatedMemory: the COMPLETE rewritten monitoring notes that the next review will receive in place of the ACCUMULATED MONITORING NOTES above. Carry forward every still-relevant entry, then fold in only DURABLE findings from today's items (ongoing storylines, partially-tripped killCriteria, recurring patterns, source-credibility observations), each as a short dated bullet tagged with the killCriteria or watch item it relates to. Merge entries about the same storyline, drop resolved or obsolete entries, and never record pure noise. Keep it under 2000 words. If nothing durable changed, return the prior notes unchanged (or an empty string when there were none).
+Field guidance:
+- change_level: the MAXIMUM item_change_level across all items (NONE/NOISE/MINOR/MAJOR/CRITICAL).
+- news_summary: 1-2 sentences on what today's items reported -- facts only, no thesis judgment.
+- thesis_impact: 2-4 sentences on the net effect of today's news on the 5-7 year thesis.
+- recommended_actions: concrete next actions; empty array if none.
+- item_analyses: exactly one entry per news item, using its id from the [id] prefix as
+  news_item_id, plus its item_change_level and a one-sentence analysis (under 160 characters).
+- updated_memory: the COMPLETE rewritten monitoring notes the next review will receive in place
+  of the notes above. Carry forward every still-relevant entry, fold in only DURABLE new findings
+  (ongoing storylines, partially-tripped triggers, recurring patterns), merge entries about the
+  same storyline, and drop resolved or pure-noise items. Keep it under 2000 words; escape line
+  breaks as \n. If nothing durable changed, return the prior notes unchanged (empty string if none).
