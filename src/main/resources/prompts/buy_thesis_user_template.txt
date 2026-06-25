@@ -5,16 +5,29 @@ Company: {{companyName}}
 Analyst notes / context (may be empty): {{userNotes}}
 Latest fundamentals from data provider (may be empty): {{fundamentalsJson}}
 
-The response shape is enforced by a strict JSON schema, so return ONLY the JSON object it defines.
-Keep every string value concise (aim under 160 chars) and arrays to 3-5 items. This endpoint stores
-structured monitoring data, not an essay.
+Work through the full Stage 0-6 doctrine in your reasoning, but RETURN ONLY the flat JSON
+object enforced by the schema. Every field is required; never leave one blank. If evidence is
+thin, write a brief honest note (e.g. "insufficient data; based on general knowledge") rather
+than an empty string. Keep each string concise.
 
-Field guidance (semantics the schema can't capture):
-- convictionScore: 0-100. GREEN typically 70+, YELLOW 40-69, RED below 40.
-- exclusionGates.failedGates: gate ids (G1-G7); empty array when passed is true.
-- moat.moatTypes: any of TECHNOLOGY, NETWORK_EFFECT, SCALE, BRAND, SWITCHING_COST, PROPRIETARY_DATA, REGULATORY, DISTRIBUTION, TALENT.
-- thesisSummary: 3-5 plain sentences on why this compounds for 5-7 years.
-- killCriteria: 3-7 OBSERVABLE, headline-matchable conditions that would BREAK the thesis (consumed by the daily review). Bad: "competition increases". Good: "a rival ships a production product that runs mainstream workloads without our ecosystem at materially lower cost".
-- watchItems: specific metrics/events to monitor quarterly.
-- upgradeMilestones: only for YELLOW (what would upgrade it to GREEN); empty array otherwise.
-- growthForecast: follow Stage 6. Return = revenueGrowthFactor(CAGR) x (terminalP/S / currentP/S), then apply the size cap. If fundamentals provide currentPriceToSales you MUST use it and set confidence HIGH; otherwise estimate it and set MEDIUM/LOW. Echo the P/S you used in currentPriceToSales.
+Field guidance:
+- final_rating: GREEN, YELLOW, or RED per Stage 5. The default is NOT GREEN.
+- conviction: High, Medium, or Low (GREEN typically High, YELLOW Medium, RED Low).
+- portfolio_role: the company type and how it would serve a concentrated growth portfolio.
+- saved_buy_thesis_summary: 3-5 plain sentences on why this compounds for 5-7 years.
+- core_thesis: one or two sentences capturing the single central bet.
+- business_essence: what the business really does and the industry it really competes in.
+- growth_drivers: the mega-trend, its stage, and the concrete drivers of 5-7 year growth.
+- moat_summary: the moats present (technology, network, scale, brand, switching cost, data,
+  regulatory, distribution, talent) and how deep and durable they are.
+- financial_quality: growth rate, Rule of 40, margins, and cash-flow self-funding.
+- valuation_view: an honest read on the current valuation versus the growth it must deliver.
+- main_risks: the most credible threats, including the single biggest paradigm-shift risk.
+- thesis_break_triggers: 3-7 OBSERVABLE, headline-matchable conditions that would BREAK the
+  thesis (consumed by the daily review). Bad: "competition increases". Good: "a rival ships a
+  production product that runs mainstream workloads without our ecosystem at lower cost".
+- daily_review_focus: 3-6 specific metrics/events to monitor (growth thresholds, margin trends,
+  named competitor products, regulatory decisions).
+- return_multiple: follow Stage 6 (2x, 3-5x, 5-10x, or 10x+) after applying the size cap.
+- return_basis: one line - CAGR assumption, terminal multiple, bear/bull case, and confidence.
+- full_buy_thesis: a 2-4 paragraph prose narrative tying the above together for a reader.
