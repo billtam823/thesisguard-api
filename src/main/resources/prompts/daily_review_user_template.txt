@@ -25,7 +25,9 @@ Field guidance:
 - change_level: the MAXIMUM item_change_level across all items (NONE/NOISE/MINOR/MAJOR/CRITICAL).
 - news_summary: 1-2 sentences on what today's items reported -- facts only, no thesis judgment.
 - thesis_impact: 2-4 sentences on the net effect of today's news on the 5-7 year thesis.
-- recommended_actions: concrete next actions; empty array if none.
+- recommended_actions: the concrete next actions. If no action is needed, return a single entry
+  saying so, e.g. "Continue holding current status; no action required from today's news." Never
+  return an empty array.
 - item_analyses: exactly one entry per news item, using its id from the [id] prefix as
   news_item_id, plus its item_change_level and a one-sentence analysis (under 160 characters).
 - updated_memory: the COMPLETE rewritten monitoring notes the next review will receive in place
