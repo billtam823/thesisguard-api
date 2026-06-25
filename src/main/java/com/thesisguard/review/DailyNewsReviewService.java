@@ -135,7 +135,10 @@ public class DailyNewsReviewService {
                     .thesisChangeLevel(ai.thesisChangeLevel())
                     .summary(ai.summary())
                     .thesisImpact(ai.thesisImpact())
-                    .recommendedAction(ai.recommendedAction())
+                    // The model may return no actions for a non-material change; never store blank.
+                    .recommendedAction(ai.recommendedAction() == null || ai.recommendedAction().isBlank()
+                            ? "Continue holding current status; no action required from today's news."
+                            : ai.recommendedAction())
                     .build();
             addAnalysisItems(review, material, ai.newsAnalysis());
             addNoiseAnalysisItems(review, noise, reasons);
