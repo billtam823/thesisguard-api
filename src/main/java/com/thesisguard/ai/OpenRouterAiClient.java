@@ -246,12 +246,12 @@ public class OpenRouterAiClient implements AiClient {
         boolean structured = responseFormat != null && responseFormat.jsonSchema() != null;
         // When enforcing a strict schema, require providers that honor it so failures are explicit.
         ProviderConfig provider = structured ? new ProviderConfig(true) : null;
-        // Reasoning support is a per-MODEL trait, not per-request: the thesis model mandates reasoning
-        // (effort:"none" is rejected), so use low-effort reasoning (excluded from output) for all its
-        // calls (primary, compact fallback, json_object retry). Other models keep reasoning disabled.
-        ReasoningConfig reasoning = model.equals(thesisModel)
-                ? new ReasoningConfig("low", true)
-                : new ReasoningConfig("none", true);
+        // Disable reasoning. exclude:true only strips thinking from the RESPONSE -- the model still
+        // SPENDS the reasoning tokens, which filled the completion budget (truncating the JSON) and
+        // added ~2 min of latency before the provider returned 500. The configured model
+        // (deepseek-v4-flash) supports a non-thinking mode, so enabled:false makes it spend the whole
+        // completion budget on the JSON answer instead of on hidden thinking.
+        ReasoningConfig reasoning = new ReasoningConfig(false, null, null);
         return new OpenRouterRequest(
                 model,
                 List.of(new RequestMessage("system", systemPrompt), new RequestMessage("user", userPrompt)),
@@ -730,7 +730,8 @@ public class OpenRouterAiClient implements AiClient {
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record ReasoningConfig(String effort, Boolean exclude) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record ReasoningConfig(Boolean enabled, String effort, Boolean exclude) {}
 
     // response_format: either {"type":"json_object"} or strict structured outputs
     // {"type":"json_schema","json_schema":{...}}. json_schema is omitted for json_object.
