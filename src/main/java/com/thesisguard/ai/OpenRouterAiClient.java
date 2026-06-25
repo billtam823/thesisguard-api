@@ -91,26 +91,21 @@ public class OpenRouterAiClient implements AiClient {
 
     @Override
     public ThesisAiResponse generateBuyThesis(Stock stock) {
-        // Fetch real fundamentals once and feed both the full and compact prompts so the growth
-        // forecast survives the (frequent) truncation fallback on weaker models.
+        // Fetch real fundamentals once so the growth forecast and size cap use live numbers.
         FundamentalsSnapshot fundamentals = fetchFundamentalsSafe(stock);
         String fundamentalsJson = buildFundamentalsJson(stock, fundamentals);
         ThesisAiResponse response;
         try {
-            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 12000, buyThesisResponseFormat);
+            String json = callOpenRouter(thesisModel, buyThesisSystemPrompt,
+                    buildThesisUserPrompt(stock, fundamentalsJson), 0.4, 6000, buyThesisResponseFormat);
             response = mapThesisResponse(json);
         } catch (TruncatedJsonException ex) {
-            log.debug("[OpenRouter] Thesis JSON was truncated; retrying with compact fallback schema");
-            try {
-                String compactJson = callOpenRouter(thesisModel, buyThesisSystemPrompt, buildCompactThesisUserPrompt(stock, fundamentalsJson), 0.2, 8000);
-                response = mapCompactThesisResponse(compactJson, stock);
-            } catch (TruncatedJsonException compactEx) {
-                throw new ApiException(HttpStatus.BAD_GATEWAY,
-                        "OpenRouter model output was truncated even with the compact fallback schema. Switch to a model with a larger completion limit.");
-            }
+            log.debug("[OpenRouter] Thesis JSON truncated; retrying once with a larger completion budget");
+            String retryJson = callOpenRouter(thesisModel, buyThesisSystemPrompt,
+                    buildThesisUserPrompt(stock, fundamentalsJson), 0.2, 12000, buyThesisResponseFormat);
+            response = mapThesisResponse(retryJson);
         }
-        // Weak models routinely ignore the prompt's size cap, so enforce the law-of-large-numbers
-        // ceiling deterministically against the real market cap. The model proposes; code clamps.
+        // The model proposes the forecast bucket; code clamps it to the law-of-large-numbers ceiling.
         return clampForecastToSize(response, fundamentals);
     }
 
@@ -429,101 +424,25 @@ public class OpenRouterAiClient implements AiClient {
         return value == null || value.isBlank() ? "" : ": " + value;
     }
 
-    private ThesisAiResponse mapThesisResponse(String json) {
+    ThesisAiResponse mapThesisResponse(String json) {
         JsonNode root = parseTree(json);
-        JsonNode firstPrinciples = root.path("firstPrinciples");
-        JsonNode trend = root.path("trend");
-        JsonNode fiveCriteria = root.path("fiveCriteria");
-        JsonNode positionGuidance = root.path("positionGuidance");
-
         return new ThesisAiResponse(
-                pretty(root),
-                text(root, "thesisSummary"),
-                text(root, "verdict"),
-                convictionFromScore(root.path("convictionScore").asInt(0)),
-                text(root, "companyType"),
-                text(root, "thesisSummary"),
-                joinNonBlank(
-                        "Industry: " + text(firstPrinciples, "trueIndustry"),
-                        "Winning rules: " + text(firstPrinciples, "industryWinningRules"),
-                        "Core advantage: " + text(firstPrinciples, "coreAdvantage"),
-                        "Direction: " + text(firstPrinciples, "coreAdvantageDirection")
-                ),
-                joinNonBlank(
-                        "Mega-trend: " + text(trend, "megaTrend"),
-                        "Trend stage: " + text(trend, "stage"),
-                        "Stage rationale: " + text(trend, "stageRationale"),
-                        "Market size: " + text(fiveCriteria.path("marketSize"), "evidence")
-                ),
-                joinNonBlank(
-                        "Score: " + fiveCriteria.path("moat").path("score").asText("0"),
-                        "Types: " + joinArray(fiveCriteria.path("moat").path("moatTypes")),
-                        "Depth: " + text(fiveCriteria.path("moat"), "moatDepth")
-                ),
-                joinNonBlank(
-                        "Rapid growth: " + text(fiveCriteria.path("rapidGrowth"), "evidence"),
-                        "Rule of 40: " + fiveCriteria.path("rapidGrowth").path("ruleOf40Value").asText("0"),
-                        "Cash flow: " + text(fiveCriteria.path("cashFlow"), "evidence")
-                ),
-                joinNonBlank(
-                        "Entry strategy: " + text(positionGuidance, "entryStrategy"),
-                        "Max portfolio percent: " + positionGuidance.path("maxPortfolioPercent").asText("0"),
-                        "Return target: " + text(positionGuidance, "returnTarget")
-                ),
-                joinNonBlank(
-                        "Paradigm shift threat: " + text(firstPrinciples.path("paradigmShiftRisk"), "threat"),
-                        "Probability: " + text(firstPrinciples.path("paradigmShiftRisk"), "probability"),
-                        "Failed gates: " + joinArray(root.path("exclusionGates").path("failedGates"))
-                ),
-                joinArray(root.path("killCriteria")),
-                joinArray(root.path("watchItems")),
-                text(root.path("growthForecast"), "returnMultiple"),
-                buildReturnBasis(root.path("growthForecast"))
-        );
-    }
-
-    // Flatten the growthForecast node into a single human-readable line for the UI panel.
-    private String buildReturnBasis(JsonNode gf) {
-        if (gf == null || gf.isMissingNode() || gf.isNull()) {
-            return null;
-        }
-        String basis = joinNonBlank(
-                "CAGR: " + text(gf, "revenueCagr"),
-                text(gf, "terminalMultipleAssumption"),
-                text(gf, "basis"),
-                "Bear: " + text(gf, "bearCase"),
-                "Bull: " + text(gf, "bullCase"),
-                "Confidence: " + text(gf, "confidence")
-        );
-        return basis.isBlank() ? null : basis;
-    }
-
-    private ThesisAiResponse mapCompactThesisResponse(String json, Stock stock) {
-        JsonNode root = parseTree(json);
-        String verdict = text(root, "verdict");
-        int convictionScore = root.path("convictionScore").asInt(0);
-        String thesisSummary = text(root, "thesisSummary");
-        String killCriteria = joinArray(root.path("killCriteria"));
-        String watchItems = joinArray(root.path("watchItems"));
-        String risks = joinArray(root.path("risks"));
-
-        return new ThesisAiResponse(
-                pretty(root),
-                thesisSummary,
-                verdict,
-                convictionFromScore(convictionScore),
-                text(root, "companyType"),
-                thesisSummary,
-                "Core advantage: " + text(root, "coreAdvantage") + "\nDirection: " + text(root, "coreAdvantageDirection"),
-                text(root, "trend"),
-                text(root, "moat"),
-                text(root, "financialQuality"),
-                text(root, "valuationView"),
-                risks,
-                killCriteria,
-                watchItems.isBlank() ? "Monitor quarterly fundamentals, moat signals, valuation, and thesis-breaking events for " + stock.getTicker() + "." : watchItems,
-                text(root.path("growthForecast"), "returnMultiple"),
-                buildReturnBasis(root.path("growthForecast"))
+                text(root, "full_buy_thesis"),
+                text(root, "saved_buy_thesis_summary"),
+                text(root, "final_rating"),
+                text(root, "conviction"),
+                text(root, "portfolio_role"),
+                text(root, "core_thesis"),
+                text(root, "business_essence"),
+                text(root, "growth_drivers"),
+                text(root, "moat_summary"),
+                text(root, "financial_quality"),
+                text(root, "valuation_view"),
+                text(root, "main_risks"),
+                joinArray(root.path("thesis_break_triggers")),
+                joinArray(root.path("daily_review_focus")),
+                text(root, "return_multiple"),
+                text(root, "return_basis")
         );
     }
 
@@ -684,21 +603,6 @@ public class OpenRouterAiClient implements AiClient {
         if (marketCap > 1e12) return 1;     // $1-3T  -> "3-5x"
         if (marketCap > 250e9) return 2;    // $250B-1T -> "5-10x"
         return 3;                            // < $250B -> "10x+"
-    }
-
-    private String buildCompactThesisUserPrompt(Stock stock, String fundamentalsJson) {
-        return """
-                Generate a compact long-term buy thesis for this stock using the system doctrine.
-                Ticker: %s
-                Company: %s
-                Fundamentals (may be "(none)"): %s
-
-                Return ONLY minified JSON. No markdown. Every string under 90 characters.
-                For growthForecast follow Stage 6: returnMultiple = growthFactor(CAGR) x (terminalP/S / currentP/S).
-                If fundamentals provide currentPriceToSales you MUST use it and set confidence HIGH; else estimate and set MEDIUM/LOW.
-                Required schema:
-                {"verdict":"GREEN|YELLOW|RED","convictionScore":0,"companyType":"TECH_INNOVATOR|BUSINESS_MODEL_INNOVATOR|BRAND|ECOSYSTEM","trend":"string","coreAdvantage":"string","coreAdvantageDirection":"STRENGTHENING|STABLE|WEAKENING","moat":"string","financialQuality":"string","valuationView":"string","thesisSummary":"string","killCriteria":["string","string","string"],"watchItems":["string","string","string"],"risks":["string","string","string"],"growthForecast":{"returnMultiple":"2x|3-5x|5-10x|10x+","revenueCagr":"string","currentPriceToSales":0,"terminalMultipleAssumption":"string","basis":"string","bearCase":"2x|3-5x|5-10x|10x+","bullCase":"2x|3-5x|5-10x|10x+","confidence":"LOW|MEDIUM|HIGH"}}
-                """.formatted(stock.getTicker(), stock.getCompanyName(), fundamentalsJson);
     }
 
     private String buildReviewUserPrompt(Stock stock, StockThesis thesis, List<NewsItem> newsItems, String monitorMemory) {
@@ -862,16 +766,6 @@ public class OpenRouterAiClient implements AiClient {
             return cleaned;
         }
         return cleaned.substring(0, Math.max(0, maxLength - 3)) + "...";
-    }
-
-    private String convictionFromScore(int score) {
-        if (score >= 70) {
-            return "High";
-        }
-        if (score >= 40) {
-            return "Medium";
-        }
-        return "Low";
     }
 
     private ThesisChangeLevel mapChangeLevel(String changeLevel) {

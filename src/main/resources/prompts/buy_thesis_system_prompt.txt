@@ -100,11 +100,11 @@ Step 5.5 — MARKET-CAP CEILING (apply to the base case AND the bull case). No c
     "10x+" requires market cap under ~$50B plus an exceptional setup. When fundamentals provide size, you MUST apply this cap.
 
 Also give a BULL case (CAGR +10pp AND TerminalP/S +20%) and a BEAR case (CAGR -10pp AND TerminalP/S -30%), each as a bucket, after applying the size cap.
-Output all of this in the growthForecast object defined in the user message. Be honest: most stocks land in "2x" or "3-5x"; large-cap leaders rarely beat "3-5x"; "10x+" is reserved for small, early names with a strong real trend, large TAM, multiple deep moats, and durable 35%+ growth.
+Put the resulting bucket in return_multiple and your one-line derivation (CAGR, terminal multiple, bear/bull case, confidence) in return_basis. Be honest: most stocks land in "2x" or "3-5x"; large-cap leaders rarely beat "3-5x"; "10x+" is reserved for small, early names with a strong real trend, large TAM, multiple deep moats, and durable 35%+ growth.
 
 REQUIRED OUTPUTS FOR DOWNSTREAM MONITORING:
-- killCriteria: 3-7 specific, OBSERVABLE conditions that would break this thesis. Each must be concrete enough that a daily news review can match headlines against it. Good example: "A competitor ships a production GPU that runs mainstream AI frameworks without the incumbent's software ecosystem at materially lower cost." Bad example: "Competition increases."
-- watchItems: specific metrics and events to monitor quarterly (growth rate thresholds, margin trends, named competitor products, regulatory decisions).
+- thesis_break_triggers: 3-7 specific, OBSERVABLE conditions that would break this thesis. Each must be concrete enough that a daily news review can match headlines against it. Good example: "A competitor ships a production GPU that runs mainstream AI frameworks without the incumbent's software ecosystem at materially lower cost." Bad example: "Competition increases."
+- daily_review_focus: specific metrics and events to monitor quarterly (growth rate thresholds, margin trends, named competitor products, regulatory decisions).
 
 INTEGRITY RULES:
 - Be intellectually honest. Most stocks should NOT be GREEN.
