@@ -1,4 +1,63 @@
-# ThesisGuard
+# ThesisGuard — API (Backend)
+
+[![Live demo](https://img.shields.io/badge/demo-thesisguard.kingheung.com-2ea44f?logo=vercel&logoColor=white)](https://thesisguard.kingheung.com)
+![Java](https://img.shields.io/badge/Java-21-b07219?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+
+> **An AI-powered stock-thesis monitoring platform for long-term investors.** Add a stock, generate an AI buy thesis, then let a daily **two-stage AI review** weigh fresh news, SEC 8-K filings and insider trades against it — escalating the stock's status and raising an alert when the thesis materially changes.
+
+**🔗 Live demo:** [thesisguard.kingheung.com](https://thesisguard.kingheung.com)  ·  **Frontend repo:** [thesisguard-app](https://github.com/billtam823/thesisguard-app)  ·  this repo is the **Spring Boot backend**.
+
+![ThesisGuard — the Equity Dossier: a daily AI verdict against the saved thesis, with the monitoring journal below](docs/screenshots/dossier.png)
+
+## Highlights
+
+- **Two-stage AI review pipeline** — a cheap *triage* model filters market noise first, so the expensive *doctrine review* only reads news that could actually move the long-term thesis. Fails safe: if triage can't run, every item is reviewed.
+- **Cross-day monitoring journal** — an AI-maintained digest tied to each thesis's kill-criteria and watch items, carried into every future review so multi-day developments are judged in context, not in isolation.
+- **Real SEC EDGAR data, zero API key** — per-ticker 8-K filings and Form 4 insider trades pulled live and translated into human-readable summaries the AI can reason over.
+- **Structured-output model routing** — thesis generation requires both `structured_outputs` and `reasoning`, so OpenRouter only routes to capable models; the lighter review/triage calls use plain JSON for flexibility.
+- **Clone-and-run with no keys** — a `MockAiClient` fallback (`@ConditionalOnMissingBean`) drives the entire flow without any paid API key.
+- **Production-deployed** — multi-stage Docker image, Dokploy + Traefik path routing, `/actuator/health` checks, and a same-origin frontend (no CORS preflight in prod).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    User([Investor]) --> FE["React SPA<br/>Vite · MUI · TanStack Query"]
+    FE -->|"REST /api"| API["Spring Boot API<br/>Java 21"]
+    API --> DB[("PostgreSQL")]
+
+    subgraph Thesis["Thesis generation → powerful model"]
+        direction LR
+        Gen["Buy-thesis generation"] -.->|"OpenRouter"| Powerful["Powerful model<br/>reasoning + structured outputs<br/>(openrouter.model)"]
+    end
+
+    subgraph Review["Daily review → cheap model"]
+        direction LR
+        Triage["Triage<br/>material vs noise"] --> Doctrine["Doctrine review<br/>vs saved thesis"]
+        Triage -.->|"OpenRouter"| Cheap["Cheap model<br/>plain JSON<br/>(review-model / triage-model)"]
+        Doctrine -.-> Cheap
+    end
+
+    API -->|"generate thesis"| Gen
+    API -->|"daily review"| Triage
+
+    API -->|"company news"| SA["Seeking Alpha<br/>via RapidAPI"]
+    API -->|"8-K · Form 4 · profile"| OB["OpenBB Platform<br/>self-hosted · SEC / yfinance"]
+```
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/thesis.png" alt="AI-generated buy thesis"><br><sub><b>AI-generated buy thesis</b> — rating, conviction, portfolio role, pillars and the full document.</sub></td>
+    <td width="50%"><img src="docs/screenshots/news.png" alt="News triage classification"><br><sub><b>Triage in action</b> — every item tagged Material / Noise / Unrelated before the expensive review.</sub></td>
+  </tr>
+</table>
+
+## System overview
 
 ThesisGuard is a stock investment thesis management system for long-term buy-and-hold monitoring. It has two parts:
 
